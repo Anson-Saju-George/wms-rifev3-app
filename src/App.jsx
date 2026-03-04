@@ -144,7 +144,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-10">
       <div className="max-w-4xl mx-auto space-y-8">
         <h1 className="text-3xl font-bold text-center">
-          Video Frame Interpolation
+          Web Motion Synthesizer
         </h1>
 
         {!token && (
