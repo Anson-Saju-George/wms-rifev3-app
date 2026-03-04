@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Files and Directories for the application
+.env
+client_secret.json
+storage/uploads
+storage/outputs

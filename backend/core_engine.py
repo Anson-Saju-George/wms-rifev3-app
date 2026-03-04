@@ -1,6 +1,6 @@
 """
-Minimal interpolation engine for video frame interpolation.
-No benchmarking. No CSV logging. No experiment logic.
+Streaming interpolation engine for video frame interpolation.
+Memory efficient and supports progress callbacks.
 """
 
 import os
@@ -30,8 +30,10 @@ def _to_tensor(img, device):
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     t = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
     t = t.unsqueeze(0)
+
     if device == "cuda":
         t = t.cuda(non_blocking=True)
+
     return t
 
 
@@ -50,13 +52,9 @@ def pad32(t):
     return F.pad(t, pad), (h, w)
 
 
-# ---------------- Interpolation ----------------
+# ---------------- Frame Interpolation ----------------
 
 def interpolate_pair(model, img0, img1, times, device):
-    """
-    Generates intermediate frames between two images.
-    Supports recursive multi-step interpolation.
-    """
 
     I0 = _to_tensor(img0, device)
     I1 = _to_tensor(img1, device)
@@ -88,13 +86,22 @@ def interpolate_pair(model, img0, img1, times, device):
     return out
 
 
-def interpolate_video(model, video_path, times, device):
+# ---------------- Streaming Video Interpolation ----------------
+
+def interpolate_video(
+    model,
+    input_path,
+    output_path,
+    multiplier,
+    device,
+    progress_callback=None
+):
     """
-    Interpolates full video.
-    Returns interpolated frames and original fps.
+    Memory-efficient video interpolation.
+    Processes frame-by-frame and writes directly to disk.
     """
 
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(input_path)
 
     if not cap.isOpened():
         raise ValueError("Failed to open video")
@@ -103,47 +110,58 @@ def interpolate_video(model, video_path, times, device):
     if fps <= 0:
         fps = 25.0
 
-    frames = []
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frames.append(frame)
+    ret, prev = cap.read()
 
-    cap.release()
+    if not ret:
+        raise ValueError("Video has no frames")
 
-    if len(frames) < 2:
-        return frames, fps
+    h, w, _ = prev.shape
 
-    output = []
-
-    for i in range(len(frames) - 1):
-        output.append(frames[i])
-        mids = interpolate_pair(model, frames[i], frames[i + 1], times, device)
-        output.extend(mids)
-
-    output.append(frames[-1])
-
-    return output, fps
-
-
-def write_video(frames, path, fps):
-    if not frames:
-        raise ValueError("No frames to write")
-
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-
-    h, w, _ = frames[0].shape
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     writer = cv2.VideoWriter(
-        path,
+        output_path,
         cv2.VideoWriter_fourcc(*"mp4v"),
-        fps,
+        fps * multiplier,
         (w, h),
     )
 
-    for frame in frames:
-        writer.write(frame)
+    processed = 0
+
+    while True:
+
+        ret, frame = cap.read()
+
+        if not ret:
+            break
+
+        writer.write(prev)
+
+        mids = interpolate_pair(
+            model,
+            prev,
+            frame,
+            multiplier,
+            device
+        )
+
+        for m in mids:
+            writer.write(m)
+
+        prev = frame
+
+        processed += 1
+
+        if progress_callback and total_frames > 0:
+            progress = int((processed / total_frames) * 100)
+            progress_callback(progress)
+
+    writer.write(prev)
 
     writer.release()
+    cap.release()
+
+    if progress_callback:
+        progress_callback(100)
