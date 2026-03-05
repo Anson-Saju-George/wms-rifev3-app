@@ -26,14 +26,14 @@ Base.metadata.create_all(bind=engine)
 # CONFIG
 # --------------------------------------------------
 
-MAX_VIDEO_SECONDS = 1200
+MAX_VIDEO_SECONDS = 60 * 10 # 10 minutes length limit
 MAX_WIDTH = 1920
 MAX_HEIGHT = 1080
 
 MAX_QUEUE = 10
 
-AUTO_PURGE_AFTER = 3600
-IDLE_TIMEOUT = 300
+AUTO_PURGE_AFTER = 60 * 60  # Purge after 1 hr of inactivity
+IDLE_TIMEOUT = 60 * 20 # Offload models after 20 mins of inactivity
 
 SUPPORTED_MODELS = [0,1,2]
 SUPPORTED_MULTIPLIERS = [2,3,4]

@@ -26,6 +26,7 @@ dist-ssr
 
 # Files and Directories for the application
 .env
+backend/app.db
 client_secret.json
 /**/uploads/
 /**/outputs/
