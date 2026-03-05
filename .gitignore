@@ -27,5 +27,8 @@ dist-ssr
 # Files and Directories for the application
 .env
 client_secret.json
-storage/uploads
-storage/outputs
+/**/uploads/
+/**/outputs/
+temp/debug_download.mp4
+backend/storage/outputs/*
+backend/storage/uploads/*

@@ -26,13 +26,13 @@ Base.metadata.create_all(bind=engine)
 # CONFIG
 # --------------------------------------------------
 
-MAX_VIDEO_SECONDS = 600
+MAX_VIDEO_SECONDS = 1200
 MAX_WIDTH = 1920
 MAX_HEIGHT = 1080
 
 MAX_QUEUE = 10
 
-AUTO_PURGE_AFTER = 600
+AUTO_PURGE_AFTER = 3600
 IDLE_TIMEOUT = 300
 
 SUPPORTED_MODELS = [0,1,2]
@@ -40,13 +40,13 @@ SUPPORTED_MULTIPLIERS = [2,3,4]
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-UPLOAD_DIR = "storage/uploads"
-OUTPUT_DIR = "storage/outputs"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+UPLOAD_DIR = os.path.join(BASE_DIR, "storage/uploads")
+OUTPUT_DIR = os.path.join(BASE_DIR, "storage/outputs")
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-# GPU limits
 
 MAX_GPU_WORKERS = 2
 MIN_FREE_VRAM_MB = 1200
@@ -61,7 +61,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "http://127.0.0.1:5173"
+        "http://127.0.0.1:5173",
+        "https://ansonsajugeorge.online",
+        "https://www.ansonsajugeorge.online",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -83,6 +85,9 @@ job_model = {}
 job_multiplier = {}
 job_input_path = {}
 job_timestamps = {}
+
+# NEW
+job_original_name = {}
 
 queue_lock = threading.Lock()
 gpu_lock = threading.Lock()
@@ -196,8 +201,6 @@ def worker_loop(worker_id):
             time.sleep(0.5)
             continue
 
-        # GPU scheduling
-
         while True:
 
             with gpu_lock:
@@ -260,8 +263,6 @@ def worker_loop(worker_id):
         job_timestamps[job_id] = time.time()
         last_activity = time.time()
 
-# spawn workers
-
 for i in range(MAX_GPU_WORKERS):
     threading.Thread(target=worker_loop, args=(i,), daemon=True).start()
 
@@ -285,7 +286,7 @@ def purge_all():
     job_multiplier.clear()
     job_input_path.clear()
     job_timestamps.clear()
-
+    job_original_name.clear()
 
 def cleanup_loop():
 
@@ -334,7 +335,6 @@ def google_auth(token:str, db:Session=Depends(get_db)):
         "role": user.role
     }
 
-
 def get_current_user(
     authorization:str = Header(None),
     db:Session=Depends(get_db)
@@ -382,9 +382,10 @@ async def upload(
         if len(job_queue) >= MAX_QUEUE:
             raise HTTPException(status_code=429, detail="Queue full")
 
-    ext = os.path.splitext(file.filename)[1]
-
     job_id = str(uuid.uuid4())
+
+    original_name, ext = os.path.splitext(file.filename)
+    job_original_name[job_id] = original_name
 
     upload_path = os.path.join(UPLOAD_DIR,f"{job_id}{ext}")
 
@@ -420,7 +421,6 @@ async def upload(
 
     return {"job_id":job_id}
 
-
 @app.get("/status/{job_id}")
 def status(job_id:str):
 
@@ -430,7 +430,6 @@ def status(job_id:str):
         "model_id":job_model.get(job_id),
         "multiplier":job_multiplier.get(job_id)
     }
-
 
 @app.get("/download/{job_id}")
 def download(
@@ -449,8 +448,10 @@ def download(
     if not os.path.exists(output_path):
         raise HTTPException(status_code=404, detail="Not ready")
 
+    original = job_original_name.get(job_id, job_id)
+
     return FileResponse(
         output_path,
         media_type="video/mp4",
-        filename=f"{job_id}.mp4"
+        filename=f"{original}_processed.mp4"
     )

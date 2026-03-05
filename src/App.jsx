@@ -14,245 +14,424 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 
-import { Upload, Video, Gauge } from "lucide-react";
+import { Upload, Gauge } from "lucide-react";
 
-const API = "http://127.0.0.1:8000";
+const API = "/wms/api";
 
 export default function App() {
-  const [token, setToken] = useState(null);
 
-  const [file, setFile] = useState(null);
+  const [token,setToken] = useState(null)
+  const [file,setFile] = useState(null)
 
-  const [model, setModel] = useState("0");
-  const [multiplier, setMultiplier] = useState("2");
+  const [model,setModel] = useState("0")
+  const [multiplier,setMultiplier] = useState("2")
 
-  const [jobId, setJobId] = useState(null);
+  const [jobId,setJobId] = useState(null)
 
-  const [status, setStatus] = useState(null);
-  const [progress, setProgress] = useState(0);
+  const [status,setStatus] = useState(null)
+  const [progress,setProgress] = useState(0)
 
-  const [drag, setDrag] = useState(false);
+  const [uploading,setUploading] = useState(false)
+  const [uploadProgress,setUploadProgress] = useState(0)
 
-  useEffect(() => {
-    const saved = localStorage.getItem("token");
+  const [processing,setProcessing] = useState(false)
+  const [downloading,setDownloading] = useState(false)
 
-    if (saved) setToken(saved);
-  }, []);
+  useEffect(()=>{
+    const saved = localStorage.getItem("token")
+    if(saved) setToken(saved)
+  },[])
 
-  const handleLogin = async (res) => {
-    const r = await fetch(`${API}/auth/google?token=${res.credential}`, {
-      method: "POST",
-    });
+  const handleLogin = async(res)=>{
 
-    const data = await r.json();
+    const r = await fetch(`${API}/auth/google?token=${res.credential}`,{
+      method:"POST"
+    })
 
-    localStorage.setItem("token", data.access_token);
+    const data = await r.json()
 
-    setToken(data.access_token);
-  };
+    localStorage.setItem("token",data.access_token)
+    setToken(data.access_token)
+  }
 
-  const logout = () => {
-    localStorage.removeItem("token");
+  const logout = ()=>{
 
-    setToken(null);
+    localStorage.removeItem("token")
 
-    setJobId(null);
-    setProgress(0);
-  };
+    setToken(null)
+    setJobId(null)
+    setProgress(0)
+    setStatus(null)
+    setFile(null)
+  }
 
-  const uploadVideo = async () => {
-    if (!file) {
-      alert("Select video");
-      return;
+  const handleFileChange = (e)=>{
+
+    const f = e.target.files[0]
+
+    setFile(f)
+
+    setJobId(null)
+    setStatus(null)
+    setProgress(0)
+
+    setUploading(false)
+    setProcessing(false)
+    setDownloading(false)
+  }
+
+  const uploadVideo = ()=>{
+
+    if(!file){
+      alert("Select video")
+      return
     }
 
-    const form = new FormData();
+    const form = new FormData()
+    form.append("file",file)
 
-    form.append("file", file);
+    const xhr = new XMLHttpRequest()
 
-    const res = await fetch(
-      `${API}/upload?model_id=${model}&multiplier=${multiplier}`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: form,
-      },
-    );
+    xhr.open(
+      "POST",
+      `${API}/upload?model_id=${model}&multiplier=${multiplier}`
+    )
 
-    const data = await res.json();
+    xhr.setRequestHeader("Authorization",`Bearer ${token}`)
 
-    if (!res.ok) {
-      alert(data.detail);
-      return;
+    setUploading(true)
+
+    xhr.upload.onprogress = (e)=>{
+
+      if(e.lengthComputable){
+
+        const percent = Math.round((e.loaded / e.total) * 100)
+        setUploadProgress(percent)
+      }
     }
 
-    setJobId(data.job_id);
-    setStatus("queued");
-    setProgress(0);
+    xhr.onload = ()=>{
 
-    pollStatus(data.job_id);
-  };
+      setUploading(false)
 
-  const pollStatus = (job) => {
-    const interval = setInterval(async () => {
-      const res = await fetch(`${API}/status/${job}`);
+      if(xhr.status !== 200){
 
-      const data = await res.json();
+        alert("Upload failed")
+        return
+      }
 
-      setStatus(data.status);
-      setProgress(data.progress);
+      const data = JSON.parse(xhr.responseText)
 
-      if (
+      setJobId(data.job_id)
+
+      setStatus("queued")
+      setProgress(0)
+
+      setProcessing(true)
+
+      pollStatus(data.job_id)
+    }
+
+    xhr.onerror = ()=>{
+      setUploading(false)
+      alert("Upload failed")
+    }
+
+    xhr.send(form)
+  }
+
+  const pollStatus = (job)=>{
+
+    const interval = setInterval(async()=>{
+
+      const res = await fetch(`${API}/status/${job}`)
+      const data = await res.json()
+
+      setStatus(data.status)
+      setProgress(data.progress)
+
+      if(
         data.status === "done" ||
         data.status === "failed" ||
         data.status === "failed_oom"
-      ) {
-        clearInterval(interval);
+      ){
+
+        clearInterval(interval)
+        setProcessing(false)
       }
-    }, 5000);
-  };
+
+    },3000)
+
+  }
 
   const download = async () => {
+
+  if (downloading) return
+
+  setDownloading(true)
+
+  try {
+
     const res = await fetch(`${API}/download/${jobId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
 
-    const blob = await res.blob();
+    if (!res.ok) {
+      alert("Download failed")
+      setDownloading(false)
+      return
+    }
 
-    const url = window.URL.createObjectURL(blob);
+    const blob = await res.blob()
 
-    const a = document.createElement("a");
+    let filename = `${jobId}.mp4`
 
-    a.href = url;
-    a.download = `${jobId}.mp4`;
+    const disposition = res.headers.get("content-disposition")
 
-    a.click();
-  };
+    if (disposition) {
+      const match = disposition.match(/filename="(.+)"/)
+      if (match) filename = match[1]
+    }
+
+    const url = window.URL.createObjectURL(blob)
+
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename
+
+    document.body.appendChild(a)
+    a.click()
+
+    a.remove()
+
+    window.URL.revokeObjectURL(url)
+
+  } catch (e) {
+
+    console.error(e)
+    alert("Download error")
+
+  }
+
+  setDownloading(false)
+
+}
 
   const statusColor = {
-    queued: "secondary",
-    processing: "default",
-    waiting_gpu: "outline",
-    done: "success",
-    failed: "destructive",
-    failed_oom: "destructive",
-  };
 
-  return (
+    queued:"secondary",
+    processing:"default",
+    done:"success",
+    failed:"destructive",
+    failed_oom:"destructive"
+  }
+
+  return(
+
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-10">
+
       <div className="max-w-4xl mx-auto space-y-8">
+
         <h1 className="text-3xl font-bold text-center">
           Web Motion Synthesizer
         </h1>
 
-        {!token && (
+        {!token &&(
+
           <div className="flex justify-center">
+
             <GoogleLogin
               onSuccess={handleLogin}
-              onError={() => alert("Login Failed")}
+              onError={()=>alert("Login Failed")}
             />
+
           </div>
+
         )}
 
-        {token && (
+        {token &&(
+
           <>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex justify-between">
-                  Model Settings
-                  <Button variant="outline" onClick={logout}>
-                    Logout
-                  </Button>
-                </CardTitle>
-              </CardHeader>
 
-              <CardContent className="grid grid-cols-2 gap-4">
+          <Card>
+
+            <CardHeader>
+
+              <CardTitle className="flex justify-between">
+
+                Model Settings
+
+                <Button variant="outline" onClick={logout}>
+                  Logout
+                </Button>
+
+              </CardTitle>
+
+            </CardHeader>
+
+            <CardContent className="grid grid-cols-2 gap-4">
+
+              <div>
+
+                <p className="mb-2">Model</p>
+
+                <Select value={model} onValueChange={setModel}>
+
+                  <SelectTrigger>
+                    <SelectValue/>
+                  </SelectTrigger>
+
+                  <SelectContent>
+
+                    <SelectItem value="0">Baseline RIFE</SelectItem>
+                    <SelectItem value="1">WMS Finetuned</SelectItem>
+                    <SelectItem value="2">WMS Custom Loss</SelectItem>
+
+                  </SelectContent>
+
+                </Select>
+
+              </div>
+
+              <div>
+
+                <p className="mb-2">Interpolation</p>
+
+                <Select value={multiplier} onValueChange={setMultiplier}>
+
+                  <SelectTrigger>
+                    <SelectValue/>
+                  </SelectTrigger>
+
+                  <SelectContent>
+
+                    <SelectItem value="2">2x</SelectItem>
+                    <SelectItem value="3">3x</SelectItem>
+                    <SelectItem value="4">4x</SelectItem>
+
+                  </SelectContent>
+
+                </Select>
+
+              </div>
+
+            </CardContent>
+
+          </Card>
+
+          <Card>
+
+            <CardHeader>
+
+              <CardTitle className="flex items-center gap-2">
+
+                <Upload size={18}/>
+                Upload Video
+
+              </CardTitle>
+
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+
+              <Input
+                type="file"
+                accept="video/*"
+                onChange={handleFileChange}
+              />
+
+              {uploading &&(
+
                 <div>
-                  <p className="mb-2">Model</p>
 
-                  <Select value={model} onValueChange={setModel}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                  <Progress value={uploadProgress}/>
 
-                    <SelectContent>
-                      <SelectItem value="0">Baseline RIFE</SelectItem>
+                  <p className="text-sm mt-2">
+                    Uploading {uploadProgress}%
+                  </p>
 
-                      <SelectItem value="1">WMS Finetuned</SelectItem>
-
-                      <SelectItem value="2">WMS Custom Loss</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
 
-                <div>
-                  <p className="mb-2">Interpolation</p>
+              )}
 
-                  <Select value={multiplier} onValueChange={setMultiplier}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+              <Button
+                onClick={uploadVideo}
+                className="w-full"
+                disabled={!file || uploading || processing}
+              >
 
-                    <SelectContent>
-                      <SelectItem value="2">2x</SelectItem>
-                      <SelectItem value="3">3x</SelectItem>
-                      <SelectItem value="4">4x</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
+                {uploading
+                  ? "Uploading..."
+                  : processing
+                  ? "Processing..."
+                  : "Process Video"
+                }
+
+              </Button>
+
+            </CardContent>
+
+          </Card>
+
+          {jobId &&(
 
             <Card>
+
               <CardHeader>
+
                 <CardTitle className="flex items-center gap-2">
-                  <Upload size={18} />
-                  Upload Video
+
+                  <Gauge size={18}/>
+                  Processing Status
+
                 </CardTitle>
+
               </CardHeader>
 
               <CardContent className="space-y-4">
-                <Input
-                  type="file"
-                  accept="video/*"
-                  onChange={(e) => setFile(e.target.files[0])}
-                />
 
-                <Button onClick={uploadVideo} className="w-full">
-                  Process Video
-                </Button>
+                <Badge variant={statusColor[status]}>
+                  {status}
+                </Badge>
+
+                <Progress value={progress}/>
+
+                <p className="text-sm text-muted-foreground">
+                  Progress {progress}%
+                </p>
+
+                {status === "done" &&(
+
+                  <Button
+                    onClick={download}
+                    disabled={downloading}
+                  >
+
+                    {downloading
+                      ? "Downloading..."
+                      : "Download Result"
+                    }
+
+                  </Button>
+
+                )}
+
               </CardContent>
+
             </Card>
 
-            {jobId && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Gauge size={18} />
-                    Processing Status
-                  </CardTitle>
-                </CardHeader>
+          )}
 
-                <CardContent className="space-y-4">
-                  <Badge variant={statusColor[status]}>{status}</Badge>
-
-                  <Progress value={progress} />
-
-                  <p className="text-sm text-muted-foreground">
-                    Progress {progress}%
-                  </p>
-
-                  {status === "done" && (
-                    <Button onClick={download}>Download Result</Button>
-                  )}
-                </CardContent>
-              </Card>
-            )}
           </>
+
         )}
+
       </div>
+
     </div>
-  );
+
+  )
+
 }
