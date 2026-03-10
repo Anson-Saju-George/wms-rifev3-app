@@ -1,14 +1,21 @@
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
 import { GoogleLogin } from "@react-oauth/google";
+import { motion } from "framer-motion";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 
-import { UploadCloud, Gauge } from "lucide-react";
+import { Upload, Gauge } from "lucide-react";
 
 const API = "/wms/api";
 
@@ -100,13 +107,20 @@ export default function LiveDemo() {
       setUploading(false);
 
       if (xhr.status !== 200) {
-        alert("Upload failed");
+        try {
+          const err = JSON.parse(xhr.responseText);
+          alert(err.detail || "Upload failed");
+        } catch {
+          alert("Upload failed");
+        }
+
         return;
       }
 
       const data = JSON.parse(xhr.responseText);
 
       setJobId(data.job_id);
+
       setStatus("queued");
       setProgress(0);
 
@@ -162,11 +176,20 @@ export default function LiveDemo() {
 
       const blob = await res.blob();
 
+      let filename = `${jobId}.mp4`;
+
+      const disposition = res.headers.get("content-disposition");
+
+      if (disposition) {
+        const match = disposition.match(/filename="(.+)"/);
+        if (match) filename = match[1];
+      }
+
       const url = window.URL.createObjectURL(blob);
 
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${jobId}.mp4`;
+      a.download = filename;
 
       document.body.appendChild(a);
       a.click();
@@ -181,12 +204,20 @@ export default function LiveDemo() {
     setDownloading(false);
   };
 
+  const statusColor = {
+    queued: "secondary",
+    processing: "default",
+    done: "success",
+    failed: "destructive",
+    failed_oom: "destructive",
+  };
+
   return (
-    <section className="max-w-5xl mx-auto mt-32 px-6 space-y-10">
+    <section className="max-w-4xl mx-auto mt-32 px-6 space-y-8">
       <motion.h2
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-3xl font-bold text-center"
+        className="text-3xl font-heading text-center"
       >
         Live GPU Demo
       </motion.h2>
@@ -201,25 +232,62 @@ export default function LiveDemo() {
       )}
 
       {token && (
-        <div className="space-y-6">
+        <>
           <Card>
             <CardHeader>
               <CardTitle className="flex justify-between">
-                Upload Video
+                Model Settings
                 <Button variant="outline" onClick={logout}>
                   Logout
                 </Button>
               </CardTitle>
             </CardHeader>
 
+            <CardContent className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="mb-2">Model</p>
+
+                <Select value={model} onValueChange={setModel}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="0">Baseline RIFE</SelectItem>
+                    <SelectItem value="1">WMS Finetuned</SelectItem>
+                    <SelectItem value="2">WMS Custom Loss</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <p className="mb-2">Interpolation</p>
+
+                <Select value={multiplier} onValueChange={setMultiplier}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="2">2x</SelectItem>
+                    <SelectItem value="3">3x</SelectItem>
+                    <SelectItem value="4">4x</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload size={18} />
+                Upload Video
+              </CardTitle>
+            </CardHeader>
+
             <CardContent className="space-y-4">
               <Input type="file" accept="video/*" onChange={handleFileChange} />
-
-              {file && (
-                <p className="text-sm text-muted-foreground">
-                  Selected: {file.name}
-                </p>
-              )}
 
               {uploading && (
                 <div>
@@ -238,7 +306,7 @@ export default function LiveDemo() {
                   ? "Uploading..."
                   : processing
                     ? "Processing..."
-                    : "Run Interpolation"}
+                    : "Process Video"}
               </Button>
             </CardContent>
           </Card>
@@ -253,7 +321,7 @@ export default function LiveDemo() {
               </CardHeader>
 
               <CardContent className="space-y-4">
-                <Badge>{status}</Badge>
+                <Badge variant={statusColor[status]}>{status}</Badge>
 
                 <Progress value={progress} />
 
@@ -269,7 +337,7 @@ export default function LiveDemo() {
               </CardContent>
             </Card>
           )}
-        </div>
+        </>
       )}
     </section>
   );
