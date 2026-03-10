@@ -156,10 +156,7 @@ export default function LiveDemo() {
   };
 
   return (
-  <section className="min-h-screen flex items-center justify-center px-6">
-
-    <div className="w-full max-w-5xl space-y-10">
-
+    <section className="max-w-5xl mx-auto mt-32 px-6 space-y-10">
       <motion.h2
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -179,7 +176,6 @@ export default function LiveDemo() {
 
       {token && (
         <div className="space-y-6">
-
           <Card>
             <CardHeader>
               <CardTitle className="flex justify-between">
@@ -192,19 +188,11 @@ export default function LiveDemo() {
 
             <CardContent className="space-y-4">
               <label className="border border-dashed rounded-xl p-10 flex flex-col items-center cursor-pointer hover:border-primary transition">
-
                 <UploadCloud size={40} />
 
-                <p className="text-sm mt-2">
-                  Drag or click to upload
-                </p>
+                <p className="text-sm mt-2">Drag or click to upload</p>
 
-                <Input
-                  type="file"
-                  accept="video/*"
-                  onChange={handleFile}
-                />
-
+                <Input type="file" accept="video/*" onChange={handleFile} />
               </label>
 
               {file && (
@@ -212,18 +200,15 @@ export default function LiveDemo() {
                   Selected: {file.name}
                 </p>
               )}
-
             </CardContent>
           </Card>
 
           <Card>
-
             <CardHeader>
               <CardTitle>Process</CardTitle>
             </CardHeader>
 
             <CardContent className="space-y-4">
-
               <Button
                 onClick={uploadVideo}
                 disabled={!file || uploading || processing}
@@ -232,22 +217,16 @@ export default function LiveDemo() {
                 {uploading
                   ? `Uploading ${uploadProgress}%`
                   : processing
-                  ? "Processing..."
-                  : "Run Interpolation"}
+                    ? "Processing..."
+                    : "Run Interpolation"}
               </Button>
 
-              {uploading && (
-                <Progress value={uploadProgress} />
-              )}
-
+              {uploading && <Progress value={uploadProgress} />}
             </CardContent>
-
           </Card>
 
           {jobId && (
-
             <Card>
-
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Gauge size={18} />
@@ -256,7 +235,6 @@ export default function LiveDemo() {
               </CardHeader>
 
               <CardContent className="space-y-4">
-
                 <Badge>{status}</Badge>
 
                 <Progress value={progress} />
@@ -266,27 +244,15 @@ export default function LiveDemo() {
                 </p>
 
                 {status === "done" && (
-                  <Button
-                    onClick={download}
-                    disabled={downloading}
-                  >
-                    {downloading
-                      ? "Downloading..."
-                      : "Download Result"}
+                  <Button onClick={download} disabled={downloading}>
+                    {downloading ? "Downloading..." : "Download Result"}
                   </Button>
                 )}
-
               </CardContent>
-
             </Card>
-
           )}
-
         </div>
       )}
-
-    </div>
-
-  </section>
-);
+    </section>
+  );
 }
