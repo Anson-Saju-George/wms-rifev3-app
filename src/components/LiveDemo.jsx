@@ -15,7 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 
-import { Upload, Gauge } from "lucide-react";
+import { UploadCloud, Gauge, Cpu } from "lucide-react";
 
 const API = "/wms/api";
 
@@ -27,6 +27,7 @@ export default function LiveDemo() {
   const [multiplier, setMultiplier] = useState("2");
 
   const [jobId, setJobId] = useState(null);
+
   const [status, setStatus] = useState(null);
   const [progress, setProgress] = useState(0);
 
@@ -36,10 +37,26 @@ export default function LiveDemo() {
   const [processing, setProcessing] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
+  const [system, setSystem] = useState(null);
+
   useEffect(() => {
     const saved = localStorage.getItem("token");
     if (saved) setToken(saved);
   }, []);
+
+  useEffect(() => {
+    fetchSystem();
+    const t = setInterval(fetchSystem, 5000);
+    return () => clearInterval(t);
+  }, []);
+
+  const fetchSystem = async () => {
+    try {
+      const r = await fetch(`${API}/system`);
+      const data = await r.json();
+      setSystem(data);
+    } catch {}
+  };
 
   const handleLogin = async (res) => {
     const r = await fetch(`${API}/auth/google?token=${res.credential}`, {
@@ -54,7 +71,6 @@ export default function LiveDemo() {
 
   const logout = () => {
     localStorage.removeItem("token");
-
     setToken(null);
     setFile(null);
     setJobId(null);
@@ -73,7 +89,6 @@ export default function LiveDemo() {
 
     setUploading(false);
     setProcessing(false);
-    setDownloading(false);
   };
 
   const uploadVideo = () => {
@@ -106,7 +121,7 @@ export default function LiveDemo() {
     xhr.onload = () => {
       setUploading(false);
 
-      if (xhr.status !== 200) {
+      if (xhr.status < 200 || xhr.status >= 300) {
         try {
           const err = JSON.parse(xhr.responseText);
           alert(err.detail || "Upload failed");
@@ -131,7 +146,7 @@ export default function LiveDemo() {
 
     xhr.onerror = () => {
       setUploading(false);
-      alert("Upload failed");
+      alert("Network error");
     };
 
     xhr.send(form);
@@ -157,117 +172,107 @@ export default function LiveDemo() {
   };
 
   const download = async () => {
-    if (downloading) return;
+  if (downloading) return;
 
-    setDownloading(true);
+  setDownloading(true);
 
-    try {
-      const res = await fetch(`${API}/download/${jobId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+  try {
+    const res = await fetch(`${API}/download/${jobId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-      if (!res.ok) {
-        alert("Download failed");
-        setDownloading(false);
-        return;
-      }
-
-      const blob = await res.blob();
-
-      let filename = `${jobId}.mp4`;
-
-      const disposition = res.headers.get("content-disposition");
-
-      if (disposition) {
-        const match = disposition.match(/filename="(.+)"/);
-        if (match) filename = match[1];
-      }
-
-      const url = window.URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      window.URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error(e);
-      alert("Download error");
+    if (!res.ok) {
+      alert("Download failed");
+      setDownloading(false);
+      return;
     }
 
-    setDownloading(false);
-  };
+    const blob = await res.blob();
 
-  const statusColor = {
-    queued: "secondary",
-    processing: "default",
-    done: "success",
-    failed: "destructive",
-    failed_oom: "destructive",
+    let filename = "result.mp4";
+
+    const disposition = res.headers.get("content-disposition");
+
+    if (disposition) {
+      const match = disposition.match(/filename="(.+)"/);
+      if (match) filename = match[1];
+    }
+
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    window.URL.revokeObjectURL(url);
+  } catch {
+    alert("Download error");
+  }
+
+  setDownloading(false);
   };
 
   return (
-    <section className="max-w-4xl mx-auto mt-32 px-6 space-y-8">
-      <motion.h2
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="text-3xl font-heading text-center"
-      >
-        Live GPU Demo
-      </motion.h2>
+    <section className="min-h-screen flex items-center justify-center px-6 py-20">
+      <div className="w-full max-w-4xl space-y-8">
+        <motion.h2
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-3xl font-heading text-center"
+        >
+          Live GPU Demo
+        </motion.h2>
 
-      {!token && (
-        <div className="flex justify-center">
-          <GoogleLogin
-            onSuccess={handleLogin}
-            onError={() => alert("Login Failed")}
-          />
-        </div>
-      )}
+        {system && (
+          <div className="surface rounded-xl p-6 hero-glow flex gap-4 flex-wrap justify-center text-sm">
+            <Badge>GPU Workers: {system.active_gpu_jobs}</Badge>
+            <Badge>Queue: {system.queue_length}</Badge>
+            <Badge>Free VRAM: {system.free_vram_mb} MB</Badge>
+          </div>
+        )}
 
-      {token && (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex justify-between">
-                Model Settings
+        {!token && (
+          <div className="flex justify-center">
+            <GoogleLogin
+              onSuccess={handleLogin}
+              onError={() => alert("Login Failed")}
+            />
+          </div>
+        )}
+
+        {token && (
+          <div className="space-y-6">
+            {/* SETTINGS */}
+
+            <div className="surface rounded-xl p-6 hero-glow space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="font-semibold">Model Settings</h3>
+
                 <Button variant="outline" onClick={logout}>
                   Logout
                 </Button>
-              </CardTitle>
-            </CardHeader>
+              </div>
 
-            <CardContent className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="mb-2">Model</p>
-
+              <div className="grid grid-cols-2 gap-4">
                 <Select value={model} onValueChange={setModel}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
-
                   <SelectContent>
                     <SelectItem value="0">Baseline RIFE</SelectItem>
                     <SelectItem value="1">WMS Finetuned</SelectItem>
-                    <SelectItem value="2">WMS Custom Loss</SelectItem>
+                    <SelectItem value="2">Custom Loss</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div>
-                <p className="mb-2">Interpolation</p>
 
                 <Select value={multiplier} onValueChange={setMultiplier}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
-
                   <SelectContent>
                     <SelectItem value="2">2x</SelectItem>
                     <SelectItem value="3">3x</SelectItem>
@@ -275,26 +280,44 @@ export default function LiveDemo() {
                   </SelectContent>
                 </Select>
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload size={18} />
+            {/* UPLOAD */}
+
+            <div className="surface rounded-xl p-6 hero-glow space-y-4">
+              <div className="flex items-center gap-2 font-semibold">
+                <UploadCloud size={18} />
                 Upload Video
-              </CardTitle>
-            </CardHeader>
+              </div>
 
-            <CardContent className="space-y-4">
-              <Input type="file" accept="video/*" onChange={handleFileChange} />
+              <label className="border border-dashed border-secondary/40 rounded-xl p-10 flex flex-col items-center text-center cursor-pointer hover:border-accent transition">
+                <UploadCloud size={36} className="text-accent mb-3" />
+
+                <p className="text-sm text-textSecondary">
+                  Drag or click to upload a video
+                </p>
+
+                <Input
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </label>
+
+              {file && (
+                <p className="text-sm text-textSecondary text-center">
+                  Selected: {file.name}
+                </p>
+              )}
 
               {uploading && (
-                <div>
+                <>
                   <Progress value={uploadProgress} />
-
-                  <p className="text-sm mt-2">Uploading {uploadProgress}%</p>
-                </div>
+                  <p className="text-sm text-center">
+                    Uploading {uploadProgress}%
+                  </p>
+                </>
               )}
 
               <Button
@@ -308,24 +331,22 @@ export default function LiveDemo() {
                     ? "Processing..."
                     : "Process Video"}
               </Button>
-            </CardContent>
-          </Card>
+            </div>
 
-          {jobId && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+            {/* STATUS */}
+
+            {jobId && (
+              <div className="surface rounded-xl p-6 hero-glow space-y-4">
+                <div className="flex items-center gap-2 font-semibold">
                   <Gauge size={18} />
                   Processing Status
-                </CardTitle>
-              </CardHeader>
+                </div>
 
-              <CardContent className="space-y-4">
-                <Badge variant={statusColor[status]}>{status}</Badge>
+                <Badge>{status}</Badge>
 
                 <Progress value={progress} />
 
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-textSecondary">
                   Progress {progress}%
                 </p>
 
@@ -334,11 +355,11 @@ export default function LiveDemo() {
                     {downloading ? "Downloading..." : "Download Result"}
                   </Button>
                 )}
-              </CardContent>
-            </Card>
-          )}
-        </>
-      )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

@@ -450,8 +450,23 @@ def download(
 
     original = job_original_name.get(job_id, job_id)
 
+    model = job_model.get(job_id, 0)
+    multiplier = job_multiplier.get(job_id, 2)
+    
+    # optional: convert model index to human numbering (1,2,3)
+    model_display = model + 1
+    
     return FileResponse(
         output_path,
         media_type="video/mp4",
-        filename=f"{original}_processed.mp4"
+        filename=f"{original}_processed_m{model_display}_x{multiplier}.mp4"
     )
+
+@app.get("/system")
+def system():
+
+    return {
+        "active_gpu_jobs": active_gpu_jobs,
+        "queue_length": len(job_queue),
+        "free_vram_mb": round(gpu_free_mb())
+    }
