@@ -14,6 +14,7 @@ import VideoCompare from "./VideoCompare";
 // import atmBefore from "../assets/videos/atm-before.mp4";
 // import atmAfter from "../assets/videos/atm-after.mp4";
 
+// Logic and imports remain untouched
 import rigidBefore from "../assets/videos/G.mp4";
 import rigidAfter from "../assets/videos/G.mp4";
 
@@ -56,19 +57,19 @@ export default function ExampleGallery() {
 
   return (
     <section className="mt-32 w-full max-w-6xl mx-auto px-6">
+      {/* Updated Title Animation to match Hero/Research style */}
       <motion.h2
-        initial={{ opacity: 0, y: 30 }}
+        initial={{ opacity: 0, y: 40 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
-        transition={{ duration: 0.6 }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
         className="text-3xl font-heading text-center mb-12"
       >
         Interpolation Examples
       </motion.h2>
 
-      {/* Tabs */}
-
-      <div className="flex justify-center gap-4 mb-10 flex-wrap">
+      {/* Tabs - Refined for consistency */}
+      <div className="flex justify-center gap-4 mb-12 flex-wrap">
         {Object.keys(examples).map((key) => {
           const isActive = active === key;
 
@@ -77,13 +78,13 @@ export default function ExampleGallery() {
               key={key}
               onClick={() => setActive(key)}
               className={`
-px-4 py-2 rounded-lg text-sm transition
-${
-  isActive
-    ? "bg-accent text-black"
-    : "border border-secondary text-secondary hover:bg-secondary hover:text-white"
-}
-`}
+                px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-300
+                ${
+                  isActive
+                    ? "bg-accent text-black scale-105 shadow-[0_0_20px_rgba(134,245,247,0.2)]"
+                    : "border border-secondary/40 text-secondary hover:border-secondary hover:text-white"
+                }
+              `}
             >
               {examples[key].title}
             </button>
@@ -91,11 +92,10 @@ ${
         })}
       </div>
 
-      {/* Video */}
-
+      {/* Video Transition */}
       <motion.div
         key={active}
-        initial={{ opacity: 0, scale: 0.97 }}
+        initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.5 }}
         className="flex justify-center"

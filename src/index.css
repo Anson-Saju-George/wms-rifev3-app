@@ -21,3 +21,14 @@ background:#0B1F3A;
 .card-glow{
 box-shadow:0 0 40px rgba(134,245,247,0.12);
 }
+/* Hide scrollbar but keep scrolling */
+
+html, body {
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE / Edge */
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;                /* Chrome / Safari */
+}

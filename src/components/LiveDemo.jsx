@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { GoogleLogin } from "@react-oauth/google";
 import { motion } from "framer-motion";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// UI Components
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -15,7 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 
-import { UploadCloud, Gauge, Cpu } from "lucide-react";
+import { UploadCloud, Gauge, Settings, LogOut } from "lucide-react";
 
 const API = "/wms/api";
 
@@ -172,129 +172,193 @@ export default function LiveDemo() {
   };
 
   const download = async () => {
-  if (downloading) return;
+    if (downloading) return;
 
-  setDownloading(true);
+    setDownloading(true);
 
-  try {
-    const res = await fetch(`${API}/download/${jobId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    try {
+      const res = await fetch(`${API}/download/${jobId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-    if (!res.ok) {
-      alert("Download failed");
-      setDownloading(false);
-      return;
+      if (!res.ok) {
+        alert("Download failed");
+        setDownloading(false);
+        return;
+      }
+
+      const blob = await res.blob();
+
+      let filename = "result.mp4";
+
+      const disposition = res.headers.get("content-disposition");
+
+      if (disposition) {
+        const match = disposition.match(/filename="(.+)"/);
+        if (match) filename = match[1];
+      }
+
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert("Download error");
     }
 
-    const blob = await res.blob();
-
-    let filename = "result.mp4";
-
-    const disposition = res.headers.get("content-disposition");
-
-    if (disposition) {
-      const match = disposition.match(/filename="(.+)"/);
-      if (match) filename = match[1];
-    }
-
-    const url = window.URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    window.URL.revokeObjectURL(url);
-  } catch {
-    alert("Download error");
-  }
-
-  setDownloading(false);
+    setDownloading(false);
   };
 
   return (
-    <section className="min-h-screen flex items-center justify-center px-6 py-20">
-      <div className="w-full max-w-4xl space-y-8">
-        <motion.h2
+    <section className="mt-32 w-full max-w-6xl mx-auto px-6 pb-32">
+      <div className="space-y-12 w-full">
+        {/* Header - Center Aligned but spans container */}
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-3xl font-heading text-center"
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center space-y-4"
         >
-          Live GPU Demo
-        </motion.h2>
+          <h2 className="text-3xl font-heading">Live GPU Demo</h2>
+          <p className="text-textSecondary text-sm max-w-2xl mx-auto">
+            Experience our motion-aware interpolation in real-time. Upload a
+            video clip to see the domain-adapted model synthesize intermediate frames.
+          </p>
+        </motion.div>
 
+        {/* System Status Bar - Correct Width */}
         {system && (
-          <div className="surface rounded-xl p-6 hero-glow flex gap-4 flex-wrap justify-center text-sm">
-            <Badge>GPU Workers: {system.active_gpu_jobs}</Badge>
-            <Badge>Queue: {system.queue_length}</Badge>
-            <Badge>Free VRAM: {system.free_vram_mb} MB</Badge>
-          </div>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="surface rounded-xl p-4 hero-glow flex gap-8 flex-wrap justify-center text-xs border border-white/5 w-full"
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-accent animate-pulse shadow-[0_0_8px_rgba(134,245,247,0.8)]" />
+              <span className="text-textSecondary">GPU Cluster Status:</span>
+              <span className="font-semibold text-white">Active</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-textSecondary">Active Jobs:</span>
+              <span className="font-semibold text-white">
+                {system.active_gpu_jobs}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-textSecondary">Queue Depth:</span>
+              <span className="font-semibold text-white">
+                {system.queue_length}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-textSecondary">Available VRAM:</span>
+              <span className="font-semibold text-accent">
+                {system.free_vram_mb} MB
+              </span>
+            </div>
+          </motion.div>
         )}
 
         {!token && (
-          <div className="flex justify-center">
-            <GoogleLogin
-              onSuccess={handleLogin}
-              onError={() => alert("Login Failed")}
-            />
+          <div className="surface rounded-2xl p-16 hero-glow flex flex-col items-center justify-center space-y-6 text-center border border-white/5 w-full">
+            <div className="p-4 rounded-full bg-accent/10 text-accent">
+              <Settings size={32} />
+            </div>
+            <div>
+              <h3 className="text-xl font-heading mb-2">
+                Secure GPU Pipeline
+              </h3>
+              <p className="text-textSecondary text-sm mb-8 max-w-xs mx-auto">
+                Please authenticate with Google to access the scientific processing backend.
+              </p>
+              <GoogleLogin
+                onSuccess={handleLogin}
+                onError={() => alert("Login Failed")}
+              />
+            </div>
           </div>
         )}
 
         {token && (
-          <div className="space-y-6">
-            {/* SETTINGS */}
+          <div className="grid gap-8 w-full">
+            {/* SETTINGS - Now spans full 6xl width */}
+            <div className="surface rounded-xl p-8 hero-glow border border-white/5 w-full">
+              <div className="flex justify-between items-center mb-8">
+                <div className="flex items-center gap-2">
+                  <Settings size={18} className="text-accent" />
+                  <h3 className="font-heading text-lg">Processing Parameters</h3>
+                </div>
 
-            <div className="surface rounded-xl p-6 hero-glow space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="font-semibold">Model Settings</h3>
-
-                <Button variant="outline" onClick={logout}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={logout}
+                  className="text-textSecondary hover:text-white hover:bg-white/5"
+                >
+                  <LogOut size={14} className="mr-2" />
                   Logout
                 </Button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <Select value={model} onValueChange={setModel}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">Baseline RIFE</SelectItem>
-                    <SelectItem value="1">WMS Finetuned</SelectItem>
-                    <SelectItem value="2">Custom Loss</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid md:grid-cols-2 gap-12">
+                <div className="space-y-3">
+                  <label className="text-xs text-textSecondary uppercase tracking-widest font-bold">
+                    Model Architecture
+                  </label>
+                  <Select value={model} onValueChange={setModel}>
+                    <SelectTrigger className="bg-black/40 border-white/10 w-full py-6">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Baseline RIFE (Standard)</SelectItem>
+                      <SelectItem value="1">WMS Finetuned (L1)</SelectItem>
+                      <SelectItem value="2">Custom Motion Loss (Proposed)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-                <Select value={multiplier} onValueChange={setMultiplier}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="2">2x</SelectItem>
-                    <SelectItem value="3">3x</SelectItem>
-                    <SelectItem value="4">4x</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="space-y-3">
+                  <label className="text-xs text-textSecondary uppercase tracking-widest font-bold">
+                    Temporal Upsampling
+                  </label>
+                  <Select value={multiplier} onValueChange={setMultiplier}>
+                    <SelectTrigger className="bg-black/40 border-white/10 w-full py-6">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2">2x Multiplier</SelectItem>
+                      <SelectItem value="3">3x Multiplier</SelectItem>
+                      <SelectItem value="4">4x Multiplier</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
-            {/* UPLOAD */}
-
-            <div className="surface rounded-xl p-6 hero-glow space-y-4">
-              <div className="flex items-center gap-2 font-semibold">
-                <UploadCloud size={18} />
-                Upload Video
+            {/* UPLOAD - Now spans full 6xl width */}
+            <div className="surface rounded-xl p-8 hero-glow border border-white/5 w-full">
+              <div className="flex items-center gap-2 font-heading text-lg mb-8">
+                <UploadCloud size={20} className="text-accent" />
+                Media Upload
               </div>
 
-              <label className="border border-dashed border-secondary/40 rounded-xl p-10 flex flex-col items-center text-center cursor-pointer hover:border-accent transition">
-                <UploadCloud size={36} className="text-accent mb-3" />
+              <label className="group border-2 border-dashed border-secondary/20 rounded-2xl p-16 flex flex-col items-center text-center cursor-pointer hover:border-accent/40 hover:bg-accent/5 transition-all">
+                <div className="p-5 rounded-full bg-secondary/5 text-secondary group-hover:text-accent group-hover:scale-110 group-hover:bg-accent/10 transition-all mb-4">
+                  <UploadCloud size={44} />
+                </div>
 
-                <p className="text-sm text-textSecondary">
-                  Drag or click to upload a video
+                <p className="text-base font-semibold mb-1 text-white">
+                  {file ? file.name : "Select or drag video file"}
+                </p>
+                <p className="text-xs text-textSecondary">
+                  Scientific imagery (MP4, MOV) • Max 50MB
                 </p>
 
                 <Input
@@ -305,57 +369,84 @@ export default function LiveDemo() {
                 />
               </label>
 
-              {file && (
-                <p className="text-sm text-textSecondary text-center">
-                  Selected: {file.name}
-                </p>
-              )}
-
               {uploading && (
-                <>
-                  <Progress value={uploadProgress} />
-                  <p className="text-sm text-center">
-                    Uploading {uploadProgress}%
-                  </p>
-                </>
+                <div className="mt-8 space-y-3">
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-textSecondary">
+                      Streaming to GPU Cluster...
+                    </span>
+                    <span className="text-accent font-bold">
+                      {uploadProgress}%
+                    </span>
+                  </div>
+                  <Progress value={uploadProgress} className="h-1.5" />
+                </div>
               )}
 
               <Button
                 onClick={uploadVideo}
-                className="w-full"
+                className={`w-full mt-8 py-7 text-md font-bold uppercase tracking-wider transition-all duration-300 ${!file || uploading || processing ? "bg-secondary/10 text-secondary" : "bg-accent text-black hover:scale-[1.01] shadow-[0_0_20px_rgba(134,245,247,0.3)]"}`}
                 disabled={!file || uploading || processing}
               >
                 {uploading
-                  ? "Uploading..."
+                  ? "Uploading Data..."
                   : processing
-                    ? "Processing..."
-                    : "Process Video"}
+                    ? "In Pipeline..."
+                    : "Begin Processing"}
               </Button>
             </div>
 
-            {/* STATUS */}
-
+            {/* STATUS - Now spans full 6xl width */}
             {jobId && (
-              <div className="surface rounded-xl p-6 hero-glow space-y-4">
-                <div className="flex items-center gap-2 font-semibold">
-                  <Gauge size={18} />
-                  Processing Status
+              <motion.div
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="surface rounded-xl p-8 hero-glow border border-accent/20 w-full"
+              >
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-2 font-heading text-lg">
+                    <Gauge size={20} className="text-accent" />
+                    GPU Task Status
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="border-accent/40 text-accent bg-accent/5 px-4 py-1 font-bold uppercase text-[10px] tracking-widest"
+                  >
+                    {status}
+                  </Badge>
                 </div>
 
-                <Badge>{status}</Badge>
+                <div className="space-y-6">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-textSecondary">
+                      Frame Synthesis Progress
+                    </span>
+                    <span className="text-white font-bold text-sm">
+                      {progress}%
+                    </span>
+                  </div>
 
-                <Progress value={progress} />
+                  <Progress value={progress} className="h-2.5" />
 
-                <p className="text-sm text-textSecondary">
-                  Progress {progress}%
-                </p>
-
-                {status === "done" && (
-                  <Button onClick={download} disabled={downloading}>
-                    {downloading ? "Downloading..." : "Download Result"}
-                  </Button>
-                )}
-              </div>
+                  {status === "done" && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="pt-6"
+                    >
+                      <Button
+                        onClick={download}
+                        disabled={downloading}
+                        className="w-full bg-white text-black py-7 font-bold hover:bg-gray-200 transition-colors"
+                      >
+                        {downloading
+                          ? "Generating Stream..."
+                          : "Download Interpolated Result"}
+                      </Button>
+                    </motion.div>
+                  )}
+                </div>
+              </motion.div>
             )}
           </div>
         )}

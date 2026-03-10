@@ -4,11 +4,14 @@ import { motion } from "framer-motion";
 import Hero from "./pages/Hero";
 import Research from "./pages/Research";
 import Navbar from "./components/Navbar";
+import ScrollToTop from "./components/ScrollToTop"; // Import the component
+
 
 export default function App() {
   return (
     <>
       <Navbar />
+      <ScrollToTop />
 
       <motion.div
         initial={{ opacity: 0 }}
