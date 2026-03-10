@@ -31,7 +31,6 @@ export default function LiveDemo() {
 
   useEffect(() => {
     const saved = localStorage.getItem("token");
-
     if (saved) setToken(saved);
   }, []);
 
@@ -43,7 +42,6 @@ export default function LiveDemo() {
     const data = await r.json();
 
     localStorage.setItem("token", data.access_token);
-
     setToken(data.access_token);
   };
 
@@ -53,9 +51,11 @@ export default function LiveDemo() {
     setToken(null);
     setFile(null);
     setJobId(null);
+    setStatus(null);
+    setProgress(0);
   };
 
-  const handleFile = (e) => {
+  const handleFileChange = (e) => {
     const f = e.target.files[0];
 
     setFile(f);
@@ -63,13 +63,19 @@ export default function LiveDemo() {
     setJobId(null);
     setStatus(null);
     setProgress(0);
+
+    setUploading(false);
+    setProcessing(false);
+    setDownloading(false);
   };
 
   const uploadVideo = () => {
-    if (!file) return;
+    if (!file) {
+      alert("Select video");
+      return;
+    }
 
     const form = new FormData();
-
     form.append("file", file);
 
     const xhr = new XMLHttpRequest();
@@ -86,7 +92,6 @@ export default function LiveDemo() {
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
         const percent = Math.round((e.loaded / e.total) * 100);
-
         setUploadProgress(percent);
       }
     };
@@ -102,10 +107,17 @@ export default function LiveDemo() {
       const data = JSON.parse(xhr.responseText);
 
       setJobId(data.job_id);
+      setStatus("queued");
+      setProgress(0);
 
       setProcessing(true);
 
       pollStatus(data.job_id);
+    };
+
+    xhr.onerror = () => {
+      setUploading(false);
+      alert("Upload failed");
     };
 
     xhr.send(form);
@@ -114,7 +126,6 @@ export default function LiveDemo() {
   const pollStatus = (job) => {
     const interval = setInterval(async () => {
       const res = await fetch(`${API}/status/${job}`);
-
       const data = await res.json();
 
       setStatus(data.status);
@@ -126,31 +137,46 @@ export default function LiveDemo() {
         data.status === "failed_oom"
       ) {
         clearInterval(interval);
-
         setProcessing(false);
       }
     }, 3000);
   };
 
   const download = async () => {
+    if (downloading) return;
+
     setDownloading(true);
 
-    const res = await fetch(`${API}/download/${jobId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    try {
+      const res = await fetch(`${API}/download/${jobId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-    const blob = await res.blob();
+      if (!res.ok) {
+        alert("Download failed");
+        setDownloading(false);
+        return;
+      }
 
-    const url = window.URL.createObjectURL(blob);
+      const blob = await res.blob();
 
-    const a = document.createElement("a");
+      const url = window.URL.createObjectURL(blob);
 
-    a.href = url;
-    a.download = "interpolated.mp4";
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${jobId}.mp4`;
 
-    a.click();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
 
-    window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Download error");
+    }
 
     setDownloading(false);
   };
@@ -160,7 +186,7 @@ export default function LiveDemo() {
       <motion.h2
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-3xl font-heading text-center"
+        className="text-3xl font-bold text-center"
       >
         Live GPU Demo
       </motion.h2>
@@ -169,7 +195,7 @@ export default function LiveDemo() {
         <div className="flex justify-center">
           <GoogleLogin
             onSuccess={handleLogin}
-            onError={() => alert("Login failed")}
+            onError={() => alert("Login Failed")}
           />
         </div>
       )}
@@ -187,41 +213,33 @@ export default function LiveDemo() {
             </CardHeader>
 
             <CardContent className="space-y-4">
-              <label className="border border-dashed rounded-xl p-10 flex flex-col items-center cursor-pointer hover:border-primary transition">
-                <UploadCloud size={40} />
-
-                <p className="text-sm mt-2">Drag or click to upload</p>
-
-                <Input type="file" accept="video/*" onChange={handleFile} />
-              </label>
+              <Input type="file" accept="video/*" onChange={handleFileChange} />
 
               {file && (
                 <p className="text-sm text-muted-foreground">
                   Selected: {file.name}
                 </p>
               )}
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Process</CardTitle>
-            </CardHeader>
+              {uploading && (
+                <div>
+                  <Progress value={uploadProgress} />
 
-            <CardContent className="space-y-4">
+                  <p className="text-sm mt-2">Uploading {uploadProgress}%</p>
+                </div>
+              )}
+
               <Button
                 onClick={uploadVideo}
-                disabled={!file || uploading || processing}
                 className="w-full"
+                disabled={!file || uploading || processing}
               >
                 {uploading
-                  ? `Uploading ${uploadProgress}%`
+                  ? "Uploading..."
                   : processing
                     ? "Processing..."
                     : "Run Interpolation"}
               </Button>
-
-              {uploading && <Progress value={uploadProgress} />}
             </CardContent>
           </Card>
 
