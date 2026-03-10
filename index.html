@@ -1,13 +1,59 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>app</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<title>Motion-Aware AI Video Frame Interpolation</title>
+
+<meta name="description"
+content="Interactive research demo for GPU-accelerated AI video frame interpolation handling both rigid and deformable motion." />
+
+<meta name="keywords"
+content="video frame interpolation, AI video interpolation, RIFE, deep learning, GPU video processing, optical flow" />
+
+<meta name="author" content="Anson Saju George">
+
+<meta property="og:title" content="Motion-Aware AI Video Frame Interpolation">
+<meta property="og:description"
+content="Interactive research demo showing domain-adaptive neural frame interpolation." />
+
+<meta property="og:image" content="/banner.png">
+<meta property="og:type" content="website">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<script>
+tailwind.config = {
+theme:{
+extend:{
+colors:{
+bg:"#04162E",
+surface:"#0B1F3A",
+accent:"#86F5F7",
+secondary:"#806FBC",
+textPrimary:"#FFFFFF",
+textSecondary:"#94A3B8"
+},
+fontFamily:{
+heading:["Space Grotesk","sans-serif"],
+body:["Inter","sans-serif"]
+}
+}
+}
+}
+</script>
+
+</head>
+
+<body class="bg-bg text-textPrimary font-body">
+<div id="root"></div>
+<script type="module" src="/src/main.jsx"></script>
+</body>
 </html>
