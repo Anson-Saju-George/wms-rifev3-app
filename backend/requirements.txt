@@ -1,0 +1,5 @@
+sqlalchemy
+python-jose
+google-auth
+dotenv
+razorpay
