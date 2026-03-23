@@ -3,7 +3,8 @@ import uuid
 import shutil
 import threading
 import time
-import hashlib # Added for secure hashing
+import subprocess
+from urllib.parse import quote
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header
 from fastapi.responses import FileResponse
@@ -37,7 +38,7 @@ MAX_VIDEO_SECONDS = 60 * 5
 MAX_WIDTH = 3840
 MAX_HEIGHT = 2160
 MAX_QUEUE = 10 
-MAX_FILE_SIZE = 100 * 1024 * 1024 
+MAX_FILE_SIZE = 100 * 1024 * 1024 # 100 MB Limit
 
 AUTO_PURGE_AFTER = 60 * 60 
 IDLE_TIMEOUT = 60 * 20 
@@ -58,14 +59,6 @@ MAX_GPU_WORKERS = 3
 MIN_FREE_VRAM_MB = 1200
 
 # --------------------------------------------------
-# UTILS
-# --------------------------------------------------
-
-def get_secure_hash(job_id: str):
-    """Generates a secure SHA256 hash for filenames"""
-    return hashlib.sha256(job_id.encode()).hexdigest()
-
-# --------------------------------------------------
 # FASTAPI
 # --------------------------------------------------
 
@@ -82,6 +75,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 # --------------------------------------------------
@@ -97,6 +91,7 @@ job_model = {}
 job_multiplier = {}
 job_input_path = {}
 job_timestamps = {}
+job_original_name = {}
 
 queue_lock = threading.Lock()
 gpu_lock = threading.Lock()
@@ -125,6 +120,7 @@ def refund_credit(job_id):
             if user and user.role != "admin" and user.credits_used > 0:
                 user.credits_used -= 1
                 db.commit()
+                print(f"Refunded credit to {user.email}")
     except Exception as e:
         print(f"Failed to refund credit: {e}")
     finally:
@@ -206,10 +202,8 @@ def worker_loop(worker_id):
         model_id = job_model[job_id]
         multiplier = job_multiplier[job_id]
         input_path = job_input_path[job_id]
-        
-        # Hashed physical output path
-        output_path = os.path.join(OUTPUT_DIR, f"{get_secure_hash(job_id)}.mp4")
-
+        silent_output = os.path.join(OUTPUT_DIR, f"silent_{job_id}.mp4")
+        final_output = os.path.join(OUTPUT_DIR, f"{job_id}.mp4")
         job_status[job_id] = "processing"
 
         try:
@@ -219,11 +213,17 @@ def worker_loop(worker_id):
             interpolate_video(
                 model,
                 input_path,
-                output_path,
+                silent_output,
                 multiplier,
                 DEVICE,
                 progress_callback=lambda p: job_progress.__setitem__(job_id,p)
             )
+
+            if not merge_audio(input_path, silent_output, final_output):
+                shutil.copy(silent_output, final_output)
+            
+            if os.path.exists(silent_output):
+                os.remove(silent_output)
 
             job_status[job_id] = "done"
             job_progress[job_id] = 100
@@ -251,6 +251,30 @@ for i in range(MAX_GPU_WORKERS):
     threading.Thread(target=worker_loop, args=(i,), daemon=True).start()
 
 # --------------------------------------------------
+# AUDIO MERGE
+# --------------------------------------------------
+
+def merge_audio(original_video, silent_video, final_video):
+    try:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", silent_video,
+            "-i", original_video,
+            "-map", "0:v",
+            "-map", "1:a?",
+            "-c:v", "copy",
+            "-c:a", "copy",
+            "-shortest",
+            final_video
+        ]
+        subprocess.run(cmd, check=True)
+        return True
+    except Exception as e:
+        print("Audio merge failed:", e)
+        return False
+
+
+# --------------------------------------------------
 # CLEANUP
 # --------------------------------------------------
 
@@ -268,6 +292,7 @@ def purge_all():
     job_multiplier.clear()
     job_input_path.clear()
     job_timestamps.clear()
+    job_original_name.clear()
 
 def cleanup_loop():
     global last_activity
@@ -397,20 +422,34 @@ async def upload(
 
     if user.role != "admin":
         if user.credits_used >= user.credits_total:
-            raise HTTPException(status_code=402, detail="Insufficient credits.")
+            raise HTTPException(status_code=402, detail="Insufficient credits. Please purchase more.")
 
-    # 100MB check
-    file.file.seek(0, 2)
-    file_size = file.file.tell()
-    file.file.seek(0)
+    # 100MB SIZE CHECK
+    file_size = 0
+    try:
+        file.file.seek(0, 2)
+        file_size = file.file.tell()
+        file.file.seek(0)
+    except:
+        pass
+
     if file_size > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File size exceeds 100MB.")
+        raise HTTPException(status_code=400, detail="File size exceeds 100MB limit.")
+
+    if model_id not in SUPPORTED_MODELS:
+        raise HTTPException(status_code=400, detail="Invalid model")
+
+    if multiplier not in SUPPORTED_MULTIPLIERS:
+        raise HTTPException(status_code=400, detail="Invalid multiplier")
+
+    with queue_lock:
+        if len(job_queue) >= MAX_QUEUE:
+            raise HTTPException(status_code=429, detail="Queue full")
 
     job_id = str(uuid.uuid4())
-    _, ext = os.path.splitext(file.filename)
-    
-    # Hashed physical upload path
-    upload_path = os.path.join(UPLOAD_DIR,f"{get_secure_hash(job_id)}{ext}")
+    original_name, ext = os.path.splitext(file.filename)
+    job_original_name[job_id] = original_name
+    upload_path = os.path.join(UPLOAD_DIR,f"{job_id}{ext}")
 
     with open(upload_path,"wb") as buffer:
         shutil.copyfileobj(file.file,buffer)
@@ -418,15 +457,17 @@ async def upload(
     try:
         validate_video(upload_path)
     except Exception as e:
-        if os.path.exists(upload_path): os.remove(upload_path)
-        print(f"!!! VALIDATION FAILED: {str(e)}")
+        if os.path.exists(upload_path):
+            os.remove(upload_path)
+        print(f"!!! UPLOAD VALIDATION FAILED: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
     if user.role != "admin":
         user.credits_used += 1
         db.commit()
 
-    with queue_lock: job_queue.append(job_id)
+    with queue_lock:
+        job_queue.append(job_id)
 
     job_status[job_id] = "queued"
     job_progress[job_id] = 0
@@ -436,14 +477,7 @@ async def upload(
 
     last_activity = time.time()
 
-    # Save ORIGINAL FILENAME in DB
-    job = Job(
-        id=job_id, 
-        user_id=user.id, 
-        model_id=model_id, 
-        status="queued",
-        original_filename=file.filename # Save it here
-    )
+    job = Job(id=job_id, user_id=user.id, model_id=model_id, status="queued")
     db.add(job)
     db.commit()
 
@@ -463,23 +497,21 @@ def download(job_id:str, user:User=Depends(get_current_user), db:Session=Depends
     job = db.query(Job).filter(Job.id==job_id).first()
     if not job or job.user_id != user.id:
         raise HTTPException(status_code=403, detail="Unauthorized")
-    
-    # Locate hashed file
-    output_path = os.path.join(OUTPUT_DIR,f"{get_secure_hash(job_id)}.mp4")
+    output_path = os.path.join(OUTPUT_DIR,f"{job_id}.mp4")
     if not os.path.exists(output_path):
         raise HTTPException(status_code=404, detail="Not ready")
-
-    # Construct the download name
-    original_base, _ = os.path.splitext(job.original_filename or "result")
-    model_display = job.model_id + 1
+    original = job_original_name.get(job_id, job_id)
+    model = job_model.get(job_id, 0)
     multiplier = job_multiplier.get(job_id, 2)
-    
-    download_name = f"{original_base}_processed_m{model_display}_x{multiplier}.mp4"
-    
+    model_display = model + 1
+    filename = quote(f"{original}_processed_m{model_display}_x{multiplier}.mp4")
+
     return FileResponse(
-        output_path, 
-        media_type="video/mp4", 
-        filename=download_name
+        output_path,
+        media_type="video/mp4",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}"
+        }
     )
 
 @app.get("/system")
