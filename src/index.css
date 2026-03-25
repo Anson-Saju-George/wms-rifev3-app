@@ -1,6 +1,31 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+
+@import "tailwindcss";
+
+@theme {
+  --color-accent: #86F5F7;
+  --color-secondary: #A78BFA;
+  --color-textSecondary: #94a3b8;
+  
+  /* If you want to use the font families mentioned in your file */
+  --font-heading: "Space Grotesk", sans-serif;
+}
+
+/* Keep your custom body styles below the theme */
+body {
+  background: #04162E;
+  color: #FFFFFF;
+  font-family: "Inter", sans-serif;
+}
+
+  /* --color-accent: #A78BFA;   
+  --color-accent-foreground: #000000;
+  
+  --color-secondary: #6D28D9;
+  --color-textSecondary: #C4B5FD;  Very Light Violet for text (Tailwind Violet 300) */
+
 body{
 background:#04162E;
 color:#FFFFFF;

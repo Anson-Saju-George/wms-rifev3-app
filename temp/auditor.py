@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 
 # ===== CONFIG =====
-ROOT_DIR = r"D:\main-projects\Final_Year_Project\App\src\components\ui"  # Change this to your React source directory
+ROOT_DIR = r"D:\main-projects\Final_Year_Project\App\src"  # Change this to your React source directory
 OUTPUT_FILE = "source_report.txt"
 
 SKIP_DIRS = {
