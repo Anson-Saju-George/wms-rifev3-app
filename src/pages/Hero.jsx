@@ -8,8 +8,8 @@ import ExampleGallery from "../components/ExampleGallery";
 import LiveDemo from "../components/LiveDemo";
 import ModelComparison from "../components/ModelComparison";
 
-import beforeVideo from "../assets/videos/G.mp4";
-import afterVideo from "../assets/videos/G.mp4";
+import beforeVideo from "../assets/videos/atmos/original.mp4";
+import afterVideo from "../assets/videos/atmos/interpolated.mp4";
 
 export default function Hero() {
   const navigate = useNavigate();

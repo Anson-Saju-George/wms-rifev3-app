@@ -2,30 +2,19 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import VideoCompare from "./VideoCompare";
 
-// import rigidBefore from "../assets/videos/rigid-before.mp4";
-// import rigidAfter from "../assets/videos/rigid-after.mp4";
-
-// import deformBefore from "../assets/videos/deform-before.mp4";
-// import deformAfter from "../assets/videos/deform-after.mp4";
-
-// import slowBefore from "../assets/videos/slow-before.mp4";
-// import slowAfter from "../assets/videos/slow-after.mp4";
-
-// import atmBefore from "../assets/videos/atm-before.mp4";
-// import atmAfter from "../assets/videos/atm-after.mp4";
 
 // Logic and imports remain untouched
-import rigidBefore from "../assets/videos/G.mp4";
-import rigidAfter from "../assets/videos/G.mp4";
+import rigidBefore from "../assets/videos/rigid/original.mp4";
+import rigidAfter from "../assets/videos/rigid/interpolated.mp4";
 
-import deformBefore from "../assets/videos/G.mp4";
-import deformAfter from "../assets/videos/G.mp4";
+import deformBefore from "../assets/videos/deform/original.mp4";
+import deformAfter from "../assets/videos/deform/interpolated.mp4";
 
-import slowBefore from "../assets/videos/G.mp4";
-import slowAfter from "../assets/videos/G.mp4";
+import slowBefore from "../assets/videos/slowmo/original.mp4";
+import slowAfter from "../assets/videos/slowmo/interpolated.mp4";
 
-import atmBefore from "../assets/videos/G.mp4";
-import atmAfter from "../assets/videos/G.mp4";
+import atmosBefore from "../assets/videos/atmos/original.mp4";
+import atmosAfter from "../assets/videos/atmos/interpolated.mp4";
 
 const examples = {
   rigid: {
@@ -45,8 +34,8 @@ const examples = {
   },
   atm: {
     title: "Atmospheric Imagery",
-    before: atmBefore,
-    after: atmAfter,
+    before: atmosBefore,
+    after: atmosAfter,
   },
 };
 
