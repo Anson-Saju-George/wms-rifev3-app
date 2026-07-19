@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 import shutil
@@ -13,8 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-import torch
-import cv2
 import razorpay
 
 from sqlalchemy.orm import Session
@@ -34,6 +33,22 @@ RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
 
 rz_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
+
+def read_int_env(name, default, minimum=0):
+    raw_value = os.environ.get(name)
+    if raw_value is None or raw_value.strip() == "":
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        print(f"Invalid {name}={raw_value!r}; using {default}.")
+        return default
+    if value < minimum:
+        print(f"Invalid {name}={value}; using {default}. Minimum is {minimum}.")
+        return default
+    return value
+
+
 MAX_VIDEO_SECONDS = 60 * 5 
 MAX_WIDTH = 3840
 MAX_HEIGHT = 2160
@@ -44,7 +59,31 @@ AUTO_PURGE_AFTER = 60 * 60
 SUPPORTED_MODELS = [0,1,2]
 SUPPORTED_MULTIPLIERS = [2,3,4]
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+INFERENCE_BACKEND_MODAL = os.environ.get("INFERENCE_BACKEND_MODAL", "false").lower() == "true"
+FALLBACK_TO_LOCAL = os.environ.get("FALLBACK_TO_LOCAL", "false").lower() == "true"
+LOCAL_DEVICE = os.environ.get("LOCAL_DEVICE", "").strip().lower()
+
+
+def torch_cuda_available():
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except Exception as exc:
+        print(f"CUDA detection fell back to CPU: {exc}")
+        return False
+
+
+def detect_device():
+    if INFERENCE_BACKEND_MODAL and not FALLBACK_TO_LOCAL:
+        return "modal"
+    if LOCAL_DEVICE == "cpu":
+        return "cpu"
+    if LOCAL_DEVICE == "cuda":
+        return "cuda" if torch_cuda_available() else "cpu"
+    return "cuda" if torch_cuda_available() else "cpu"
+
+
+DEVICE = detect_device()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "storage/uploads")
@@ -53,7 +92,9 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "storage/outputs")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-MAX_GPU_WORKERS = 3
+MAX_GPU_WORKERS = read_int_env("MAX_CONCURRENCY", 3, minimum=1)
+RATE_WINDOW_SECONDS = read_int_env("RATE_WINDOW_SECONDS", 3600, minimum=0)
+RATE_MAX_REQUESTS = read_int_env("RATE_MAX_REQUESTS", 20, minimum=0)
 MIN_FREE_VRAM_MB = 1200
 
 # --------------------------------------------------
@@ -92,9 +133,11 @@ job_original_name = {}
 
 queue_lock = threading.Lock()
 gpu_lock = threading.Lock()
+rate_limit_lock = threading.Lock()
 
 active_gpu_jobs = 0
 last_activity = time.time()
+upload_rate_history = {}
 
 # --------------------------------------------------
 # GPU STATS & UTILS
@@ -135,20 +178,49 @@ def refund_credit(job_id):
 # VALIDATION
 # --------------------------------------------------
 
+def _parse_probe_number(value, default=0.0):
+    if value in (None, "", "N/A"):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def validate_video(path):
-    cap = cv2.VideoCapture(path)
-    if not cap.isOpened():
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height,duration:format=duration",
+                "-of", "json",
+                path,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        probe = json.loads(result.stdout or "{}")
+    except Exception as exc:
+        raise ValueError("Invalid video file or unsupported codec.") from exc
+
+    streams = probe.get("streams") or []
+    if not streams:
         raise ValueError("Invalid video file or unsupported codec.")
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-    h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-    duration = frames / fps if fps > 0 else 0
-    cap.release()
+
+    stream = streams[0]
+    w = int(_parse_probe_number(stream.get("width")))
+    h = int(_parse_probe_number(stream.get("height")))
+    duration = _parse_probe_number(stream.get("duration"))
+    if duration <= 0:
+        duration = _parse_probe_number((probe.get("format") or {}).get("duration"))
+
     if duration > MAX_VIDEO_SECONDS:
-        raise ValueError(f"Video exceeds 5 minutes limit.")
+        raise ValueError("Video exceeds 5 minutes limit.")
     if w > MAX_WIDTH or h > MAX_HEIGHT:
-        raise ValueError(f"Resolution exceeds 4K limit.")
+        raise ValueError("Resolution exceeds 4K limit.")
 
 # --------------------------------------------------
 # WORKER
@@ -356,6 +428,33 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
+
+def enforce_upload_rate_limit(user_id):
+    if RATE_WINDOW_SECONDS <= 0 or RATE_MAX_REQUESTS <= 0:
+        return
+
+    now = time.time()
+    cutoff = now - RATE_WINDOW_SECONDS
+
+    with rate_limit_lock:
+        timestamps = [
+            timestamp
+            for timestamp in upload_rate_history.get(user_id, [])
+            if timestamp > cutoff
+        ]
+        if len(timestamps) >= RATE_MAX_REQUESTS:
+            retry_after = max(1, int(RATE_WINDOW_SECONDS - (now - timestamps[0])))
+            upload_rate_history[user_id] = timestamps
+            raise HTTPException(
+                status_code=429,
+                detail="Upload rate limit exceeded",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        timestamps.append(now)
+        upload_rate_history[user_id] = timestamps
+
+
 @api.get("/auth/me")
 def get_me(user: User = Depends(get_current_user)):
     return {
@@ -437,6 +536,8 @@ async def upload(
         if user.credits_used >= user.credits_total:
             raise HTTPException(status_code=402, detail="Insufficient credits. Please purchase more.")
 
+    enforce_upload_rate_limit(user.id)
+
     # 100MB SIZE CHECK
     file_size = 0
     try:
@@ -454,6 +555,12 @@ async def upload(
 
     if multiplier not in SUPPORTED_MULTIPLIERS:
         raise HTTPException(status_code=400, detail="Invalid multiplier")
+
+    if DEVICE == "modal":
+        raise HTTPException(
+            status_code=501,
+            detail="Modal inference backend is selected, but the Modal adapter is not wired yet.",
+        )
 
     with queue_lock:
         if len(job_queue) >= MAX_QUEUE:

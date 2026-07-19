@@ -33,12 +33,11 @@ client_secret.json
 temp/debug_download.mp4
 backend/storage/outputs/*
 backend/storage/uploads/*
-env_files/
 backend/train_log*/
 backend/app.db
 node_modules/
-env_files
 secrets/
 frontend/node_modules/
 frontend/dist/
 frontend/dist-ssr/
+backend/.cache/

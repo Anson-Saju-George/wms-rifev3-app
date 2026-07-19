@@ -1,9 +1,15 @@
 services:
   wms:
-    build: .
+    build:
+      context: .
+      # WMS_MODE is the public mode switch in .env:
+      #   local-gpu -> backend-local-gpu (CUDA/Torch + HF model pull)
+      #   modal     -> backend-modal (~285 MB, no CUDA/Torch/model folders)
+      target: backend-${WMS_MODE:-local-gpu}
     ports:
-      # Host port comes from .env PORT; container internal port is always 8000.
-      - "127.0.0.1:${PORT:-8000}:8000"
+      # HOST_PORT controls only the local browser URL; container internal port stays 8000.
+      # HOST_PORT=8000 -> http://localhost:8000, HOST_PORT=80 -> http://localhost.
+      - "127.0.0.1:${HOST_PORT:-8000}:8000"
     env_file:
       - .env
     restart: unless-stopped
@@ -13,6 +19,9 @@ services:
       resources:
         reservations:
           devices:
+            # Required for local-gpu mode. Compose cannot conditionally remove this
+            # from a single service based on WMS_MODE; move this block to an override
+            # if a no-GPU Modal host rejects GPU reservations.
             - driver: nvidia
               count: all
               capabilities: [gpu]

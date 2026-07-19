@@ -41,36 +41,25 @@ WMS is a React 19/Vite 7 frontend plus FastAPI backend for RIFE video frame inte
 
 ## 4. Configuration
 
-`.env.example` currently declares:
+`.env.example` currently declares these active normal knobs:
 
 ```env
-PORT=8000
-BASE_PATH=/
-API_BASE_URL=auto
-INFERENCE_BACKEND_MODAL=false
-FALLBACK_TO_LOCAL=true
-LOCAL_DEVICE=cuda
-MODAL_ENDPOINT_URL=
-MODAL_TOKEN=
-MAX_CONCURRENCY=1
+WMS_MODE=local-gpu
+HOST_PORT=8000
+MAX_CONCURRENCY=3
 RATE_WINDOW_SECONDS=3600
 RATE_MAX_REQUESTS=20
-DATABASE_URL=sqlite:///./app.db
-GOOGLE_CLIENT_ID=
-JWT_SECRET=
-RAZORPAY_KEY_ID=
-RAZORPAY_KEY_SECRET=
 ```
 
-Implemented effects: `PORT` is used by compose for host port publishing and by `entrypoint.sh` to derive `API_BASE_URL` when it is blank or `auto`; `BASE_PATH`, resolved `API_BASE_URL`, `GOOGLE_CLIENT_ID`, and `RAZORPAY_KEY_ID` are rendered into frontend runtime config by `entrypoint.sh`; `JWT_SECRET` is read by `backend/auth.py`; Razorpay backend keys are read by `backend/app.py`.
+Implemented effects: `WMS_MODE` selects the Docker build target and `entrypoint.sh` sets local-GPU vs Modal-only runtime defaults; `HOST_PORT` is used by compose for localhost port publishing; `MAX_CONCURRENCY` controls backend worker thread count and caps active local inference subprocesses; `RATE_WINDOW_SECONDS` and `RATE_MAX_REQUESTS` enforce an in-memory upload rate limit per authenticated user. `BASE_PATH`, `API_BASE_URL`, `GOOGLE_CLIENT_ID`, and `RAZORPAY_KEY_ID` remain optional runtime frontend config values; `JWT_SECRET` is read by `backend/auth.py`; Razorpay backend keys are read by `backend/app.py`.
 
 ## 5. Known Gaps / Limitations
 
-- Modal inference is not implemented yet; `INFERENCE_BACKEND_MODAL`, `MODAL_ENDPOINT_URL`, `MODAL_TOKEN`, and `FALLBACK_TO_LOCAL` are placeholders today.
-- `LOCAL_DEVICE` is documented as `cuda` for local-GPU runs, but current code still auto-detects `cuda`/`cpu` with `torch.cuda.is_available()` and does not read this env var yet. `MAX_CONCURRENCY`, `RATE_WINDOW_SECONDS`, `RATE_MAX_REQUESTS`, and `DATABASE_URL` are also declared but not currently wired to backend behavior.
+- Modal inference is not implemented yet; `MODAL_ENDPOINT_URL` and `MODAL_TOKEN` remain placeholders until the Modal adapter is added.
+- The upload rate limiter is in-process memory only; counts reset on container restart and are not shared across multiple app replicas. `DATABASE_URL` remains hardcoded in `backend/database.py` rather than read from env.
 - Job status/progress is still in process memory.
 - `/api/status/{job_id}` and `/api/system` are unauthenticated by current code.
-- `docker compose up` requires the selected localhost `PORT` to be free. With `API_BASE_URL=auto`, changing `PORT` is enough for local host-origin changes.
+- `docker compose up` requires the selected localhost `HOST_PORT` to be free. `HOST_PORT=8000` maps to `http://localhost:8000`; `HOST_PORT=80` maps to plain `http://localhost`.
 - UI research PSNR/SSIM, dataset-size, hardware, and publication claims remain UNVERIFIED by local benchmark/report files.
 
 ## 6. Verification Snapshot
@@ -79,4 +68,4 @@ Implemented effects: `PORT` is used by compose for host port publishing and by `
 - `python -m py_compile backend\\app.py backend\\auth.py backend\\infer_job.py`: passed after the folder move.
 - `docker compose config`: passed after the folder move.
 - GPU smoke container previously completed three upload/status/download runs through `/api/*`; downloaded MP4s opened with OpenCV.
-- Forbidden tracked-path check returned empty output for `train_log`, `env_files`, `.env`, `app.db`, and `node_modules` after the folder move.
+- Forbidden tracked-path check returned empty output for `train_log`, `.env`, `app.db`, and `node_modules`; earlier checks also covered the removed `env_files` convention.

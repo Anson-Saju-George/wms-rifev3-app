@@ -12,3 +12,5 @@ backend/app.db
 backend/storage
 logs
 *.log
+backend/train_log*/
+backend/.cache/
