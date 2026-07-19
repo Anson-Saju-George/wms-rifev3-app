@@ -1,4 +1,5 @@
 import os
+import secrets
 from jose import jwt
 from datetime import datetime, timedelta
 from google.oauth2 import id_token
@@ -15,6 +16,9 @@ load_dotenv()
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
 SECRET_KEY = os.getenv("JWT_SECRET")
+if not SECRET_KEY:
+    SECRET_KEY = secrets.token_urlsafe(32)
+    print("DEV-ONLY WARNING: JWT_SECRET is unset; generated an ephemeral startup secret. Sessions will be invalid after restart.")
 
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_DAYS = 30

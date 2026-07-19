@@ -25,8 +25,9 @@ import {
   Sparkles,
 } from "lucide-react";
 
-const API = "/wms/api";
-const RAZORPAY_KEY_ID = "rzp_live_SUhpE0sGoGzURD";
+const apiBaseUrl = (window.__API_BASE_URL__ || "").replace(/\/+$/, "");
+const API = `${apiBaseUrl}/api`;
+const RAZORPAY_KEY_ID = window.__RAZORPAY_KEY_ID__ || "";
 
 // --- Payment Modal Component ---
 function PaymentModal({ isOpen, onClose, onConfirm, loading }) {
@@ -92,7 +93,7 @@ function PaymentModal({ isOpen, onClose, onConfirm, loading }) {
                     <p className="text-xs text-textSecondary">{opt.label}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-bold text-white">₹{opt.price}</p>
+                    <p className="text-lg font-bold text-white">Ã¢â€šÂ¹{opt.price}</p>
                   </div>
                 </div>
               </div>
@@ -107,7 +108,7 @@ function PaymentModal({ isOpen, onClose, onConfirm, loading }) {
               "Initializing..."
             ) : (
               <span className="flex items-center gap-2">
-                Pay ₹{options.find((o) => o.count === selected).price}{" "}
+                Pay Ã¢â€šÂ¹{options.find((o) => o.count === selected).price}{" "}
                 <Sparkles size={16} />
               </span>
             )}
@@ -322,7 +323,7 @@ export default function LiveDemo() {
       const disposition = res.headers.get("content-disposition");
 
       if (disposition) {
-        // 🔥 handle UTF-8 format (your backend)
+        // Ã°Å¸â€Â¥ handle UTF-8 format (your backend)
         const utfMatch = disposition.match(/filename\*=UTF-8''(.+)/);
 
         if (utfMatch) {
@@ -569,7 +570,7 @@ export default function LiveDemo() {
                 </p>
 
                 <p className="text-xs text-textSecondary">
-                  MP4, MOV • Max 100MB
+                  MP4, MOV Ã¢â‚¬Â¢ Max 100MB
                 </p>
 
                 {!isOutOfCredits && (

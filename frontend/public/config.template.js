@@ -1,0 +1,4 @@
+window.__API_BASE_URL__="${API_BASE_URL}";
+window.__BASE_PATH__="${BASE_PATH}";
+window.__GOOGLE_CLIENT_ID__="${GOOGLE_CLIENT_ID}";
+window.__RAZORPAY_KEY_ID__="${RAZORPAY_KEY_ID}";

@@ -1,23 +1,23 @@
 import os
 import uuid
 import shutil
+import sys
 import threading
 import time
 import subprocess
 from urllib.parse import quote
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header
+from fastapi import APIRouter, FastAPI, UploadFile, File, HTTPException, Depends, Header
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import torch
 import cv2
 import razorpay
 
 from sqlalchemy.orm import Session
-
-from model_engine import load_model
-from core_engine import interpolate_video
 
 from database import get_db, engine, SessionLocal 
 from models import Base, User, Job, Transaction 
@@ -41,8 +41,6 @@ MAX_QUEUE = 10
 MAX_FILE_SIZE = 100 * 1024 * 1024 # 100 MB Limit
 
 AUTO_PURGE_AFTER = 60 * 60 
-IDLE_TIMEOUT = 60 * 20 
-
 SUPPORTED_MODELS = [0,1,2]
 SUPPORTED_MULTIPLIERS = [2,3,4]
 
@@ -63,6 +61,7 @@ MIN_FREE_VRAM_MB = 1200
 # --------------------------------------------------
 
 app = FastAPI()
+api = APIRouter(prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,8 +81,6 @@ app.add_middleware(
 # GLOBAL STATE
 # --------------------------------------------------
 
-models = {}
-model_last_used = {}
 job_queue = []
 job_status = {}
 job_progress = {}
@@ -106,10 +103,18 @@ last_activity = time.time()
 def gpu_free_mb():
     if DEVICE != "cuda":
         return 99999
-    torch.cuda.synchronize()
-    total = torch.cuda.get_device_properties(0).total_memory / (1024 ** 2)
-    allocated = torch.cuda.memory_allocated() / (1024 ** 2)
-    return total - allocated
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        values = [int(line.strip()) for line in result.stdout.splitlines() if line.strip()]
+        return max(values) if values else 99999
+    except Exception:
+        return 99999
+
 
 def refund_credit(job_id):
     db = SessionLocal()
@@ -125,37 +130,6 @@ def refund_credit(job_id):
         print(f"Failed to refund credit: {e}")
     finally:
         db.close()
-
-# --------------------------------------------------
-# MODEL MANAGEMENT
-# --------------------------------------------------
-
-def get_model(model_id):
-    global last_activity
-    if model_id not in models:
-        print(f"Loading model {model_id}")
-        models[model_id] = load_model(model_id, device=DEVICE)
-    model_last_used[model_id] = time.time()
-    last_activity = time.time()
-    return models[model_id]
-
-def offload_idle_models():
-    while True:
-        time.sleep(15)
-        if active_gpu_jobs != 0 or job_queue:
-            continue
-        now = time.time()
-        for mid in list(models.keys()):
-            if now - model_last_used.get(mid,0) > IDLE_TIMEOUT:
-                print(f"Offloading model {mid}")
-                try:
-                    models[mid].flownet.cpu()
-                except:
-                    pass
-                torch.cuda.empty_cache()
-                del models[mid]
-
-threading.Thread(target=offload_idle_models, daemon=True).start()
 
 # --------------------------------------------------
 # VALIDATION
@@ -179,6 +153,41 @@ def validate_video(path):
 # --------------------------------------------------
 # WORKER
 # --------------------------------------------------
+
+def poll_progress(job_id, progress_file):
+    try:
+        with open(progress_file, "r", encoding="utf-8") as f:
+            value = int(f.read().strip())
+        job_progress[job_id] = max(0, min(100, value))
+    except Exception:
+        pass
+
+
+def run_inference_subprocess(job_id, model_id, multiplier, input_path, silent_output, progress_file):
+    cmd = [
+        sys.executable,
+        os.path.join(BASE_DIR, "infer_job.py"),
+        "--job-id", job_id,
+        "--model-id", str(model_id),
+        "--multiplier", str(multiplier),
+        "--input", input_path,
+        "--output", silent_output,
+        "--device", DEVICE,
+        "--progress-file", progress_file,
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    while proc.poll() is None:
+        poll_progress(job_id, progress_file)
+        time.sleep(0.5)
+    poll_progress(job_id, progress_file)
+    stderr = proc.stderr.read() if proc.stderr else ""
+    return proc.returncode, stderr
+
 
 def worker_loop(worker_id):
     global active_gpu_jobs
@@ -204,39 +213,43 @@ def worker_loop(worker_id):
         input_path = job_input_path[job_id]
         silent_output = os.path.join(OUTPUT_DIR, f"silent_{job_id}.mp4")
         final_output = os.path.join(OUTPUT_DIR, f"{job_id}.mp4")
+        progress_path = os.path.join(OUTPUT_DIR, f"{job_id}.progress")
         job_status[job_id] = "processing"
 
         try:
             print(f"[Worker {worker_id}] Starting job {job_id}")
-            model = get_model(model_id)
-
-            interpolate_video(
-                model,
+            returncode, stderr = run_inference_subprocess(
+                job_id,
+                model_id,
+                multiplier,
                 input_path,
                 silent_output,
-                multiplier,
-                DEVICE,
-                progress_callback=lambda p: job_progress.__setitem__(job_id,p)
+                progress_path,
             )
+
+            if returncode == 42 or "CUDA_OOM" in stderr:
+                job_status[job_id] = "failed_oom"
+                refund_credit(job_id)
+                continue
+            if returncode != 0:
+                print(f"Inference subprocess failed for {job_id}: {stderr}")
+                job_status[job_id] = "failed"
+                refund_credit(job_id)
+                continue
 
             if not merge_audio(input_path, silent_output, final_output):
                 shutil.copy(silent_output, final_output)
-            
+
             if os.path.exists(silent_output):
                 os.remove(silent_output)
+            if os.path.exists(progress_path):
+                os.remove(progress_path)
 
             job_status[job_id] = "done"
             job_progress[job_id] = 100
 
-        except RuntimeError as e:
-            if "CUDA out of memory" in str(e):
-                torch.cuda.empty_cache()
-                job_status[job_id] = "failed_oom"
-            else:
-                job_status[job_id] = "failed"
-            refund_credit(job_id)
-
         except Exception as e:
+            print(f"Worker failed for {job_id}: {e}")
             job_status[job_id] = "failed"
             refund_credit(job_id)
 
@@ -310,7 +323,7 @@ threading.Thread(target=cleanup_loop, daemon=True).start()
 # AUTH & USER
 # --------------------------------------------------
 
-@app.post("/auth/google")
+@api.post("/auth/google")
 def google_auth(token:str, db:Session=Depends(get_db)):
     user_info = verify_google_token(token)
     if not user_info:
@@ -343,7 +356,7 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
-@app.get("/auth/me")
+@api.get("/auth/me")
 def get_me(user: User = Depends(get_current_user)):
     return {
         "email": user.email,
@@ -356,7 +369,7 @@ def get_me(user: User = Depends(get_current_user)):
 # PAYMENTS
 # --------------------------------------------------
 
-@app.post("/payments/create-order")
+@api.post("/payments/create-order")
 def create_order(num_credits: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if num_credits < 1:
         raise HTTPException(status_code=400, detail="Minimum 1 credit required")
@@ -385,7 +398,7 @@ def create_order(num_credits: int, user: User = Depends(get_current_user), db: S
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/payments/verify")
+@api.post("/payments/verify")
 def verify_payment(data: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
         rz_client.utility.verify_payment_signature({
@@ -410,7 +423,7 @@ def verify_payment(data: dict, user: User = Depends(get_current_user), db: Sessi
 # ROUTES
 # --------------------------------------------------
 
-@app.post("/upload")
+@api.post("/upload")
 async def upload(
     model_id:int,
     multiplier:int=2,
@@ -483,7 +496,7 @@ async def upload(
 
     return {"job_id":job_id}
 
-@app.get("/status/{job_id}")
+@api.get("/status/{job_id}")
 def status(job_id:str):
     return {
         "status":job_status.get(job_id,"unknown"),
@@ -492,7 +505,7 @@ def status(job_id:str):
         "multiplier":job_multiplier.get(job_id)
     }
 
-@app.get("/download/{job_id}")
+@api.get("/download/{job_id}")
 def download(job_id:str, user:User=Depends(get_current_user), db:Session=Depends(get_db)):
     job = db.query(Job).filter(Job.id==job_id).first()
     if not job or job.user_id != user.id:
@@ -514,10 +527,37 @@ def download(job_id:str, user:User=Depends(get_current_user), db:Session=Depends
         }
     )
 
-@app.get("/system")
+@api.get("/system")
 def system():
     return {
         "active_gpu_jobs": active_gpu_jobs,
         "queue_length": len(job_queue),
         "free_vram_mb": round(gpu_free_mb())
     }
+# --------------------------------------------------
+# API ROUTER & FRONTEND
+# --------------------------------------------------
+
+class SPAStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
+
+
+app.include_router(api)
+
+DIST_CANDIDATES = [
+    os.getenv("FRONTEND_DIST_DIR"),
+    os.path.abspath(os.path.join(BASE_DIR, "..", "dist")),
+    os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "dist")),
+]
+DIST_DIR = next((path for path in DIST_CANDIDATES if path and os.path.isdir(path)), None)
+if DIST_DIR:
+    app.mount("/", SPAStaticFiles(directory=DIST_DIR, html=True), name="frontend")
+else:
+    checked = ", ".join(path for path in DIST_CANDIDATES if path)
+    print(f"Frontend dist directory not found; API-only mode. Checked: {checked}")
