@@ -25,7 +25,34 @@ import {
   Sparkles,
 } from "lucide-react";
 
-const apiBaseUrl = (window.__API_BASE_URL__ || "").replace(/\/+$/, "");
+function detectMountPath() {
+  const path = window.location.pathname;
+  return path === "/wms" || path.startsWith("/wms/") ? "/wms" : "";
+}
+
+function isLocalhostUrl(value) {
+  try {
+    const url = new URL(value);
+    return ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function resolveApiBaseUrl(value) {
+  const configured = (value || "").trim().replace(/\/+$/, "");
+  const browserIsLocalhost = ["localhost", "127.0.0.1", "::1"].includes(
+    window.location.hostname,
+  );
+
+  if (configured && !(isLocalhostUrl(configured) && !browserIsLocalhost)) {
+    return configured;
+  }
+
+  return detectMountPath();
+}
+
+const apiBaseUrl = resolveApiBaseUrl(window.__API_BASE_URL__);
 const API = `${apiBaseUrl}/api`;
 const RAZORPAY_KEY_ID = window.__RAZORPAY_KEY_ID__ || "";
 

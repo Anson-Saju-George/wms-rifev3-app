@@ -4,9 +4,9 @@ import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
-  // The integrated gateway strips /wms before proxying to this container, so
-  // production assets are built from /. Runtime BASE_PATH keeps routing flexible.
-  base: "/",
+  // Production assets are emitted under /wms so path-mounted hosting loads JS/CSS/config.
+  // FastAPI also serves /wms locally, so root localhost testing still works.
+  base: "/wms/",
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {

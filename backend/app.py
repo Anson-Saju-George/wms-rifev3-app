@@ -549,6 +549,8 @@ class SPAStaticFiles(StaticFiles):
 
 
 app.include_router(api)
+# Also accept /wms/api when a path router forwards the external prefix unchanged.
+app.include_router(api, prefix="/wms")
 
 DIST_CANDIDATES = [
     os.getenv("FRONTEND_DIST_DIR"),
@@ -557,6 +559,7 @@ DIST_CANDIDATES = [
 ]
 DIST_DIR = next((path for path in DIST_CANDIDATES if path and os.path.isdir(path)), None)
 if DIST_DIR:
+    app.mount("/wms", SPAStaticFiles(directory=DIST_DIR, html=True), name="frontend-wms")
     app.mount("/", SPAStaticFiles(directory=DIST_DIR, html=True), name="frontend")
 else:
     checked = ", ".join(path for path in DIST_CANDIDATES if path)
