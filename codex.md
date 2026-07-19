@@ -1,30 +1,18 @@
 # Codex -> Claude Master Handoff - WMS RIFEv3 App
 
-This handoff is intentionally detailed. It records the current repo state, the work already committed, the local uncommitted experiment, verification outputs, and the remaining decisions. Do not copy real secret values into this file.
+This handoff is intentionally detailed. It records the current pushed repo state, verification outputs, and the remaining decisions. Do not copy real secret values into this file.
 
 ## 0. Current Snapshot
 
 - Repo root: `D:\main-projects\LIVE-ACTIVE\wms-rifev3-app`
-- Current HEAD at time of this handoff: `efa776d fix: support wms path-mounted frontend`
+- Runtime update commit covered by this handoff: `7e80ae5 feat: add runtime modes and upload controls`
 - Latest pushed commits from this session:
   - `0f04e63 docs: audit + consolidate documentation`
   - `404d394 feat: containerize local gpu wms runtime`
   - `efa776d fix: support wms path-mounted frontend`
-- Current working tree is NOT clean because of the modal-slim Docker target experiment plus the HF runtime model-pull update:
-  - modified: `.dockerignore`
-  - modified: `.env.example`
-  - modified: `.gitignore`
-  - modified: `Dockerfile`
-  - modified: `README.md`
-  - modified: `backend/app.py`
-  - modified: `codex.md`
-  - modified: `docker-compose.yml`
-  - modified: `entrypoint.sh`
-  - untracked: `backend/download_models.py`
-  - untracked: `backend/requirements-modal.txt`
-  - untracked: `docs/Modal-Architecture.md` (not created by Codex in this step; do not stage unless owner confirms)
-  - untracked: `image.png` (user screenshot artifact; do not stage unless owner explicitly asks)
-- The modal-slim experiment, modal ultraslim dependency trim, and HF runtime model-pull update have been built and smoke-tested locally but have NOT been committed or pushed.
+  - `7e80ae5 feat: add runtime modes and upload controls`
+- `7e80ae5` committed the modal-slim Docker target, HF runtime model pull, five-variable env contract, `MAX_CONCURRENCY` wiring, in-memory upload rate limiter, `frontend/jsconfig.json` removal, README/status/handoff updates, and Option B cleanup.
+- After pushing `7e80ae5`, the only remaining local artifact was untracked `docs/Modal-Architecture.md`, a design note with encoding issues that was intentionally not staged.
 - Local `.env` exists but is gitignored. Do not print, stage, or commit it. It contains local runtime values/secrets/public OAuth/payment IDs.
 - The user said they own the repo now and safe-directory caution is no longer needed, but still do not stage secrets, weights, databases, storage, or screenshots accidentally.
 
