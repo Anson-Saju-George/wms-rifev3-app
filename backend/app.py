@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from database import get_db, engine, SessionLocal 
 from models import Base, User, Job, Transaction 
 from auth import verify_google_token, create_access_token, decode_token, get_or_create_user
+from inference import dispatch, get_progress as get_modal_progress, poll as poll_modal_call
 
 Base.metadata.create_all(bind=engine)
 
@@ -49,18 +50,20 @@ def read_int_env(name, default, minimum=0):
     return value
 
 
-MAX_VIDEO_SECONDS = 60 * 5 
+MAX_VIDEO_SECONDS = read_int_env("MAX_VIDEO_SECONDS", 60 * 5, minimum=1)
 MAX_WIDTH = 3840
 MAX_HEIGHT = 2160
-MAX_QUEUE = 10 
-MAX_FILE_SIZE = 100 * 1024 * 1024 # 100 MB Limit
+MAX_QUEUE = 10
+MAX_FILE_SIZE_MB = read_int_env("MAX_FILE_SIZE_MB", 100, minimum=1)
+MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
 
 AUTO_PURGE_AFTER = 60 * 60 
 SUPPORTED_MODELS = [0,1,2]
 SUPPORTED_MULTIPLIERS = [2,3,4]
 
-INFERENCE_BACKEND_MODAL = os.environ.get("INFERENCE_BACKEND_MODAL", "false").lower() == "true"
-FALLBACK_TO_LOCAL = os.environ.get("FALLBACK_TO_LOCAL", "false").lower() == "true"
+TRUE_VALUES = {"1", "true", "t", "yes", "y", "on"}
+INFERENCE_BACKEND_MODAL = os.environ.get("INFERENCE_BACKEND_MODAL", "false").strip().lower() in TRUE_VALUES
+FALLBACK_TO_LOCAL = os.environ.get("FALLBACK_TO_LOCAL", "false").strip().lower() in TRUE_VALUES
 LOCAL_DEVICE = os.environ.get("LOCAL_DEVICE", "").strip().lower()
 
 
@@ -130,6 +133,8 @@ job_multiplier = {}
 job_input_path = {}
 job_timestamps = {}
 job_original_name = {}
+job_backend = {}
+job_modal_call_id = {}
 
 queue_lock = threading.Lock()
 gpu_lock = threading.Lock()
@@ -157,6 +162,15 @@ def gpu_free_mb():
         return max(values) if values else 99999
     except Exception:
         return 99999
+
+
+def reported_free_vram_mb():
+    if DEVICE != "cuda":
+        return None
+    free_mb = gpu_free_mb()
+    if free_mb >= 99999:
+        return None
+    return round(free_mb)
 
 
 def refund_credit(job_id):
@@ -218,7 +232,7 @@ def validate_video(path):
         duration = _parse_probe_number((probe.get("format") or {}).get("duration"))
 
     if duration > MAX_VIDEO_SECONDS:
-        raise ValueError("Video exceeds 5 minutes limit.")
+        raise ValueError(f"Video exceeds {MAX_VIDEO_SECONDS} seconds limit.")
     if w > MAX_WIDTH or h > MAX_HEIGHT:
         raise ValueError("Resolution exceeds 4K limit.")
 
@@ -273,13 +287,6 @@ def worker_loop(worker_id):
             time.sleep(0.5)
             continue
 
-        while True:
-            with gpu_lock:
-                if active_gpu_jobs < MAX_GPU_WORKERS and gpu_free_mb() > MIN_FREE_VRAM_MB:
-                    active_gpu_jobs += 1
-                    break
-            time.sleep(1)
-
         model_id = job_model[job_id]
         multiplier = job_multiplier[job_id]
         input_path = job_input_path[job_id]
@@ -287,9 +294,31 @@ def worker_loop(worker_id):
         final_output = os.path.join(OUTPUT_DIR, f"{job_id}.mp4")
         progress_path = os.path.join(OUTPUT_DIR, f"{job_id}.progress")
         job_status[job_id] = "processing"
+        job_timestamps[job_id] = time.time()
+        last_activity = time.time()
+        local_slot_acquired = False
 
         try:
             print(f"[Worker {worker_id}] Starting job {job_id}")
+            backend_kind, call_id = dispatch(job_id, input_path, model_id, multiplier)
+            job_backend[job_id] = backend_kind
+
+            if backend_kind == "modal":
+                if not call_id:
+                    raise RuntimeError("Modal dispatch returned no call_id")
+                job_modal_call_id[job_id] = call_id
+                job_progress[job_id] = max(job_progress.get(job_id, 0), 1)
+                print(f"[Worker {worker_id}] Dispatched Modal job {job_id}: {call_id}")
+                continue
+
+            while True:
+                with gpu_lock:
+                    if active_gpu_jobs < MAX_GPU_WORKERS and gpu_free_mb() > MIN_FREE_VRAM_MB:
+                        active_gpu_jobs += 1
+                        local_slot_acquired = True
+                        break
+                time.sleep(1)
+
             returncode, stderr = run_inference_subprocess(
                 job_id,
                 model_id,
@@ -326,8 +355,9 @@ def worker_loop(worker_id):
             refund_credit(job_id)
 
         finally:
-            with gpu_lock:
-                active_gpu_jobs -= 1
+            if local_slot_acquired:
+                with gpu_lock:
+                    active_gpu_jobs -= 1
 
         job_timestamps[job_id] = time.time()
         last_activity = time.time()
@@ -378,13 +408,19 @@ def purge_all():
     job_input_path.clear()
     job_timestamps.clear()
     job_original_name.clear()
+    job_backend.clear()
+    job_modal_call_id.clear()
+
+def has_processing_jobs():
+    return any(status == "processing" for status in job_status.values())
+
 
 def cleanup_loop():
     global last_activity
     while True:
         time.sleep(30)
         now = time.time()
-        if active_gpu_jobs == 0 and not job_queue:
+        if active_gpu_jobs == 0 and not job_queue and not has_processing_jobs():
             if now - last_activity > AUTO_PURGE_AFTER:
                 purge_all()
                 last_activity = time.time()
@@ -538,7 +574,7 @@ async def upload(
 
     enforce_upload_rate_limit(user.id)
 
-    # 100MB SIZE CHECK
+    # Configured upload size check
     file_size = 0
     try:
         file.file.seek(0, 2)
@@ -548,7 +584,7 @@ async def upload(
         pass
 
     if file_size > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File size exceeds 100MB limit.")
+        raise HTTPException(status_code=400, detail=f"File size exceeds {MAX_FILE_SIZE_MB}MB limit.")
 
     if model_id not in SUPPORTED_MODELS:
         raise HTTPException(status_code=400, detail="Invalid model")
@@ -556,11 +592,6 @@ async def upload(
     if multiplier not in SUPPORTED_MULTIPLIERS:
         raise HTTPException(status_code=400, detail="Invalid multiplier")
 
-    if DEVICE == "modal":
-        raise HTTPException(
-            status_code=501,
-            detail="Modal inference backend is selected, but the Modal adapter is not wired yet.",
-        )
 
     with queue_lock:
         if len(job_queue) >= MAX_QUEUE:
@@ -603,8 +634,57 @@ async def upload(
 
     return {"job_id":job_id}
 
+def refresh_modal_job(job_id):
+    global last_activity
+
+    if job_backend.get(job_id) != "modal":
+        return
+    if job_status.get(job_id) in {"done", "failed", "failed_oom"}:
+        return
+
+    call_id = job_modal_call_id.get(job_id)
+    if not call_id:
+        return
+
+    try:
+        progress = int(get_modal_progress(job_id) or 0)
+        job_progress[job_id] = max(job_progress.get(job_id, 0), min(99, progress))
+    except Exception as exc:
+        print(f"Modal progress poll failed for {job_id}: {exc}")
+
+    state, payload = poll_modal_call(call_id)
+    if state == "running":
+        job_status[job_id] = "processing"
+        last_activity = time.time()
+        return
+
+    if state == "done":
+        output_path = os.path.join(OUTPUT_DIR, f"{job_id}.mp4")
+        try:
+            if not isinstance(payload, (bytes, bytearray)):
+                raise TypeError(f"Modal returned {type(payload).__name__}, expected bytes")
+            tmp_path = f"{output_path}.tmp"
+            with open(tmp_path, "wb") as f:
+                f.write(payload)
+            os.replace(tmp_path, output_path)
+            job_status[job_id] = "done"
+            job_progress[job_id] = 100
+        except Exception as exc:
+            print(f"Modal result write failed for {job_id}: {exc}")
+            job_status[job_id] = "failed"
+            refund_credit(job_id)
+    else:
+        print(f"Modal job failed for {job_id}: {payload}")
+        job_status[job_id] = "failed"
+        refund_credit(job_id)
+
+    job_timestamps[job_id] = time.time()
+    last_activity = time.time()
+
+
 @api.get("/status/{job_id}")
 def status(job_id:str):
+    refresh_modal_job(job_id)
     return {
         "status":job_status.get(job_id,"unknown"),
         "progress":job_progress.get(job_id,0),
@@ -639,7 +719,10 @@ def system():
     return {
         "active_gpu_jobs": active_gpu_jobs,
         "queue_length": len(job_queue),
-        "free_vram_mb": round(gpu_free_mb())
+        "free_vram_mb": reported_free_vram_mb(),
+        "inference_backend": DEVICE,
+        "max_file_size_mb": MAX_FILE_SIZE_MB,
+        "max_video_seconds": MAX_VIDEO_SECONDS,
     }
 # --------------------------------------------------
 # API ROUTER & FRONTEND

@@ -32,7 +32,7 @@ COPY backend/requirements-modal.txt ./backend-modal-requirements.txt
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir -r backend-modal-requirements.txt
 
-COPY backend/app.py backend/auth.py backend/database.py backend/models.py backend/__init__.py ./backend/
+COPY backend/app.py backend/auth.py backend/database.py backend/models.py backend/inference.py backend/__init__.py ./backend/
 COPY --from=frontend /app/frontend/dist ./dist
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh

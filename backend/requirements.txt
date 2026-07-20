@@ -18,3 +18,4 @@ imageio-ffmpeg
 python-jose
 dotenv
 razorpay
+modal

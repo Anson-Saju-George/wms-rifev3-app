@@ -469,11 +469,7 @@ Current `backend/app.py` changes:
   - returns `cuda` only when `LOCAL_DEVICE=cuda` and `torch.cuda.is_available()` succeeds
   - otherwise falls back to CPU
 - `DEVICE = detect_device()`.
-- Upload route now rejects Modal-only mode with a clear placeholder until Modal adapter is implemented:
-  - HTTP status `501`
-  - detail: `Modal inference backend is selected, but the Modal adapter is not wired yet.`
-
-Reason for this guard: the modal-slim image intentionally does not copy `infer_job.py`, `core_engine.py`, `model_engine.py`, or local model folders. It can serve frontend/API/auth/system, but cannot do local inference. Upload must fail clearly rather than queueing a job that will crash later.
+- Modal adapter is now wired: upload queues jobs normally, the worker dispatches Modal calls when `INFERENCE_BACKEND_MODAL=true`, and `/api/status/{job_id}` polls Modal until it writes the returned MP4 bytes to output storage.
 
 ### 5.5 Modal-Slim Experiment Verification
 
@@ -581,21 +577,11 @@ For the user's cloud domain UI screenshot:
 - If the platform does not strip `/wms`, current backend also accepts `/wms/api/*` and serves SPA at `/wms`.
 - The earlier blue screen likely came from path/base/config asset mismatch. Commit `efa776d` was made specifically to handle `/wms` path-mounted frontend and API compatibility.
 
-## 8. Known Stale Or Conflicting Docs After Latest Work
+## 8. Current Docs Notes After Modal Work
 
-These are important for Claude if doing another docs pass:
-
-- `README.md` currently says: `The Vite production build uses base: "/".`
-  - Current code says `frontend/vite.config.js` uses `base: "/wms/"`.
-  - The README integrated gateway section should be updated if the `/wms` base behavior remains.
-- `docs/Project-Status.md` says audited against working tree based on `0f04e63`.
-  - Current HEAD is `efa776d`, with additional uncommitted Docker/backend changes.
-  - It should be updated after accepting/committing the modal-slim experiment.
-- `docs/Project-Status.md` currently says Modal/env variables are placeholders and not consumed by backend.
-  - After the uncommitted backend change, `INFERENCE_BACKEND_MODAL`, `FALLBACK_TO_LOCAL`, and `LOCAL_DEVICE` are consumed by `backend/app.py` for device/mode selection.
-  - Modal adapter itself is still not implemented.
-- `docs/Project-Status.md` currently says the Vite production build uses root/static behavior from the earlier containerization step.
-  - Current code serves both `/` and `/wms` and builds assets under `/wms/`.
+- `README.md` documents the local-GPU and Modal env paths and keeps the frontend/API contract unchanged.
+- `docs/Project-Status.md` has been refreshed to show Modal adapter code is implemented and `modal run backend/modal_app.py --input backend/samples/video_1.mp4` passed after the weight volume upload. Full WMS container upload/status/download verification in Modal mode is still pending.
+- `docs/Modal-Architecture.md` remains the design source for Modal. It exists locally as an untracked design note and has encoding mojibake in this checkout; do not stage it without reviewing/fixing encoding.
 
 ## 9. Verification History To Preserve
 
@@ -635,7 +621,7 @@ Keep these results in mind before changing behavior:
 - Current ultraslim modal image is about 285.5 MB; the earlier broad filtered modal image was about 427 MB.
 - It contains no Torch, CUDA, OpenCV, NumPy, imageio, or baked model folders. It keeps `ffmpeg`/`ffprobe` for preprocessing/postprocessing.
 - It boots FastAPI/static frontend and `/api/system` without CUDA/Torch.
-- Upload is intentionally guarded with `501` because Modal adapter is not wired yet.
+- Upload is no longer guarded with `501`; Modal mode now dispatches through `backend/inference.py` and completion is driven by `/api/status/{job_id}`.
 
 ## 10. Commands Useful For Claude
 
@@ -651,7 +637,7 @@ docker compose up --build
 Slim modal build target:
 
 ```powershell
-$env:BUILD_TARGET = 'backend-modal'
+$env:WMS_MODE = 'modal'
 docker compose build wms
 ```
 
@@ -710,44 +696,26 @@ git diff -- .env.example Dockerfile backend/app.py docker-compose.yml codex.md
 
 ## 11. Recommended Next Steps
 
-1. Modal adapter remains next.
-   - The slim `backend-modal` target works as an API/static shell, but it does not implement Modal inference yet.
-   - Upload returns a clean `501` in Modal-only mode until adapter work is done.
-   - HF runtime pull keeps `backend/train_log*` out of the Docker build context for local-GPU mode.
+1. Run the remaining WMS Modal end-to-end verification.
+   - Modal setup, volume upload, `modal run backend/modal_app.py --input backend/samples/video_1.mp4`, and `modal deploy backend/modal_app.py` have succeeded.
+   - Remaining check: run the WMS container with `INFERENCE_BACKEND_MODAL=true` and `FALLBACK_TO_LOCAL=false`, then upload -> status -> download through `/api/*`.
 
 2. Make GPU reservation optional before relying on `WMS_MODE=modal` on CPU/no-GPU cloud.
    - Current compose GPU reservation is unconditional.
    - Best likely approach, while preserving one primary compose file: use a Compose profile or a separate override only if user accepts it.
    - Do not create provider-specific config.
 
-3. If committing the modal-slim experiment, stage only intended files.
-   - Intended files:
-     - `.env.example`
-     - `Dockerfile`
-     - `backend/app.py`
-     - `docker-compose.yml`
-     - `codex.md` if this handoff update should be committed
-   - Do not stage:
-     - `.env`
-     - `image.png`
-     - model weights/folders if untracked
-     - `backend/storage/`
-     - `backend/app.db`
-     - `node_modules/`
-     - `frontend/dist/` unless intentionally tracked already
+3. Modal large-file/object-storage path remains later.
+   - Current first cut passes normal demo clip bytes to Modal.
+   - Do not claim 2 GB upload support until the Volume/object-store reference path is implemented.
 
-4. Update stale active docs after the modal-slim decision.
-   - `README.md` needs the `/wms/` Vite base correction.
-   - `docs/Project-Status.md` needs a new audit timestamp/commit and updated Modal/env status.
-
-5. Modal adapter remains out of scope/not done.
-   - There is no real Modal upload/inference/download path in backend yet.
-   - `MODAL_ENDPOINT_URL` and `MODAL_TOKEN` are still placeholders until adapter implementation.
+4. Keep local-GPU regression path intact.
+   - `INFERENCE_BACKEND_MODAL=false` should continue to use `backend/infer_job.py` subprocess isolation.
 
 ## 12. Guardrails For The Next Agent
 
 - Source code/config is source of truth.
-- Do not fabricate benchmark numbers or claim Modal is implemented.
+- Do not fabricate benchmark numbers. Modal function smoke passed, but do not claim full WMS Modal upload/status/download verification until that API path is actually run.
 - Do not commit `.env`, secrets, model weights, local DB, storage, node_modules, or screenshot artifacts.
 - Do not touch sibling apps or any master compose file.
 - Internal container port remains `8000`.
@@ -789,8 +757,10 @@ GOOGLE_CLIENT_ID
 JWT_SECRET
 RAZORPAY_KEY_ID
 RAZORPAY_KEY_SECRET
-MODAL_ENDPOINT_URL
-MODAL_TOKEN
+MODAL_APP_NAME
+MODAL_FUNCTION_NAME
+MODAL_TOKEN_ID
+MODAL_TOKEN_SECRET
 BASE_PATH
 API_BASE_URL
 ```
@@ -822,3 +792,47 @@ Verification after this Option B cleanup:
 Not re-run in this cleanup: Docker image rebuild/smoke. Previous modal-slim and HF-pull Docker build/smoke results remain recorded above, but this exact entrypoint cleanup has not been image-rebuilt yet.
 
 Caveat still present: the single `docker-compose.yml` keeps the NVIDIA GPU reservation block for local-GPU mode. Compose cannot conditionally remove that block from one service based on `WMS_MODE`; if a no-GPU Modal host rejects the reservation, move that block to a local override/profile or split services.
+## 14. Modal Inference Implementation Update
+
+Implemented after commit `b93a943` in the current working tree:
+
+- Added `backend/modal_app.py` with `modal.App("wms-rife")`, `wms-rife-weights` Volume, `wms-rife-progress` Dict, `interpolate()` GPU function, and local entrypoint.
+- `backend/modal_app.py` ships backend RIFE code into the Modal image and excludes weights/storage/db/cache/secrets. It reuses `model_engine.load_model` and `core_engine.interpolate_video`; it mutates `model_engine.MODEL_DIRS` to point at `/weights/*` before loading.
+- Added `backend/inference.py` adapter with `dispatch()`, `poll()`, and `get_progress()` using `modal.Function.from_name(...).spawn(...)`, `modal.FunctionCall.from_id(...).get(timeout=0)`, and `modal.Dict.from_name(...)`.
+- `backend/app.py` worker threads now dispatch Modal jobs without acquiring local GPU slots. Modal completion is driven by `/api/status/{job_id}`, which polls Modal, updates progress, writes returned MP4 bytes to `backend/storage/outputs/{job_id}.mp4`, and preserves the existing status response shape.
+- Local subprocess path remains in place for `INFERENCE_BACKEND_MODAL=false` or Modal dispatch fallback when `FALLBACK_TO_LOCAL=true`.
+- Added Modal client env names to `.env.example` as blank placeholders: `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, `MODAL_APP_NAME`, `MODAL_FUNCTION_NAME`, `INFERENCE_BACKEND_MODAL`, `FALLBACK_TO_LOCAL`. Blank inference/fallback vars use `WMS_MODE` defaults in `entrypoint.sh`; blank app/function names default to `wms-rife`/`interpolate`.
+- Added `modal` to both backend requirements files and copied `backend/inference.py` into the slim Docker target.
+
+Owner-token-gated Modal verification completed from WSL/zsh:
+
+```bash
+modal setup
+modal volume put wms-rife-weights ./backend/train_log /train_log
+modal volume put wms-rife-weights ./backend/train_log_wms /train_log_wms
+modal volume put wms-rife-weights ./backend/train_log_wms_custom_loss /train_log_wms_custom_loss
+modal run backend/modal_app.py --input backend/samples/video_1.mp4
+modal deploy backend/modal_app.py
+```
+
+Observed result:
+
+- `modal setup` completed and connected the workspace.
+- The first `modal volume put` attempt used Windows-style paths in zsh and failed because backslashes were interpreted as escapes (`.\backend\train_log` became `.backendtrain_log`). The corrected forward-slash commands above succeeded.
+- `modal run backend/modal_app.py --input backend/samples/video_1.mp4` initialized the app, created the mount/function, completed successfully, and wrote `out.mp4`.
+- `modal deploy backend/modal_app.py` deployed `wms-rife` successfully before the corrected volume upload; redeploy is only needed after code changes.
+### Modal Timeout Observation
+
+A real WMS browser upload dispatched to Modal as call `fc-01KXZ123RG1FK1G1ZT7NY137N1` and progress reached 88%, proving the running container was using Modal (`WMS_MODE=modal`, `INFERENCE_BACKEND_MODAL=true`, `FALLBACK_TO_LOCAL=false`, `LOCAL_DEVICE=cpu`, `torch=False`). It then failed with Modal's own message: `Task's current input ... hit its timeout of 900s`. This was not caused by status polling or the UI/system-status patch; the deployed function had `timeout=900`.
+
+`backend/modal_app.py` now reads `MODAL_TIMEOUT_SECONDS` from shell env or root `.env`, defaulting to `3600` and uses it in the `@app.function(... timeout=...)` decorator. Redeploy is required before retesting larger clips:
+
+```bash
+modal deploy backend/modal_app.py
+```
+
+The UI/system endpoint patch also changes Modal/non-local-CUDA reporting from fake `99999 MB` VRAM to `free_vram_mb: null` plus `inference_backend: "modal"`; rebuild the Docker image to see `Backend: Remote Modal` and `VRAM: Remote` in the browser.
+
+### Configurable Upload And Modal Limits
+
+Added env-backed limits: `MAX_FILE_SIZE_MB` and `MAX_VIDEO_SECONDS` are read by `backend/app.py` at WMS container startup; `MODAL_TIMEOUT_SECONDS` is read by `backend/modal_app.py` during `modal run`/`modal deploy` and therefore requires a Modal redeploy after changing it. The real `.env` was not edited because it may contain secrets; update it from `.env.example`.

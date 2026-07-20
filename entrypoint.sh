@@ -5,21 +5,19 @@ set -eu
 : "${HOST_PORT:=8000}"
 : "${PORT:=${HOST_PORT}}"
 
-# Advanced env overrides remain supported, but normal local use only needs
-# WMS_MODE + HOST_PORT. Optional OAuth/payment/Modal values can be added to
-# .env or provided by the host when those flows are needed.
+# WMS_MODE selects the Docker target. The inference backend itself is controlled
+# by INFERENCE_BACKEND_MODAL; WMS_MODE only supplies sane defaults when the
+# explicit backend vars are omitted.
 case "$WMS_MODE" in
   modal)
-    # WMS_MODE is authoritative so stale internal vars in an old .env cannot
-    # accidentally make the slim Modal image try local CUDA inference.
-    INFERENCE_BACKEND_MODAL=true
-    FALLBACK_TO_LOCAL=false
-    LOCAL_DEVICE=cpu
-    MODEL_DOWNLOAD_ENABLED=false
+    : "${INFERENCE_BACKEND_MODAL:=true}"
+    : "${FALLBACK_TO_LOCAL:=false}"
+    : "${LOCAL_DEVICE:=cpu}"
+    : "${MODEL_DOWNLOAD_ENABLED:=false}"
     ;;
   local-gpu|local_gpu|gpu)
-    INFERENCE_BACKEND_MODAL=false
-    FALLBACK_TO_LOCAL=true
+    : "${INFERENCE_BACKEND_MODAL:=false}"
+    : "${FALLBACK_TO_LOCAL:=true}"
     : "${LOCAL_DEVICE:=cuda}"
     : "${MODEL_DOWNLOAD_ENABLED:=true}"
     ;;
@@ -40,8 +38,10 @@ if [ "$API_BASE_URL" = "auto" ]; then
 fi
 : "${GOOGLE_CLIENT_ID:=}"
 : "${RAZORPAY_KEY_ID:=}"
-: "${MODAL_ENDPOINT_URL:=}"
-: "${MODAL_TOKEN:=}"
+: "${MODAL_APP_NAME:=wms-rife}"
+: "${MODAL_FUNCTION_NAME:=interpolate}"
+: "${MODAL_TOKEN_ID:=}"
+: "${MODAL_TOKEN_SECRET:=}"
 : "${MODEL_REPO_ID:=Anson-Saju-George/wms-rifev3-models-all-3}"
 : "${MODEL_REVISION:=main}"
 
@@ -71,7 +71,7 @@ fi
 
 export API_BASE_URL BASE_PATH GOOGLE_CLIENT_ID RAZORPAY_KEY_ID
 export INFERENCE_BACKEND_MODAL FALLBACK_TO_LOCAL LOCAL_DEVICE
-export MODEL_REPO_ID MODEL_REVISION MODAL_ENDPOINT_URL MODAL_TOKEN
+export MODEL_REPO_ID MODEL_REVISION MODAL_APP_NAME MODAL_FUNCTION_NAME MODAL_TOKEN_ID MODAL_TOKEN_SECRET
 
 envsubst < /app/dist/config.template.js > /app/dist/config.js
 

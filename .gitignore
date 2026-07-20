@@ -31,6 +31,7 @@ client_secret.json
 /**/uploads/
 /**/outputs/
 temp/debug_download.mp4
+out.mp4
 backend/storage/outputs/*
 backend/storage/uploads/*
 backend/train_log*/

@@ -421,8 +421,20 @@ export default function LiveDemo() {
               Queue: <span className="text-white">{system.queue_length}</span>
             </div>
             <div className="flex items-center gap-2 text-textSecondary">
+              Backend:{" "}
+              <span className="text-accent">
+                {system.inference_backend === "modal" ? "Remote Modal" : "Local"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-textSecondary">
               VRAM:{" "}
-              <span className="text-accent">{system.free_vram_mb} MB</span>
+              <span className="text-accent">
+                {system.free_vram_mb == null
+                  ? system.inference_backend === "modal"
+                    ? "Remote"
+                    : "Unavailable"
+                  : `${system.free_vram_mb} MB`}
+              </span>
             </div>
           </motion.div>
         )}
@@ -597,7 +609,7 @@ export default function LiveDemo() {
                 </p>
 
                 <p className="text-xs text-textSecondary">
-                  MP4, MOV Ã¢â‚¬Â¢ Max 100MB
+                  MP4, MOV - Max {system?.max_file_size_mb ?? 100}MB / {Math.round((system?.max_video_seconds ?? 300) / 60)} min
                 </p>
 
                 {!isOutOfCredits && (
