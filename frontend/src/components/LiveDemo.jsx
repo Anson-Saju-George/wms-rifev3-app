@@ -55,14 +55,15 @@ function resolveApiBaseUrl(value) {
 const apiBaseUrl = resolveApiBaseUrl(window.__API_BASE_URL__);
 const API = `${apiBaseUrl}/api`;
 const RAZORPAY_KEY_ID = window.__RAZORPAY_KEY_ID__ || "";
+const RUPEE = "\u20B9";
 
 // --- Payment Modal Component ---
 function PaymentModal({ isOpen, onClose, onConfirm, loading }) {
   const [selected, setSelected] = useState(1);
   const options = [
-    { count: 1, price: 20, label: "Single Render" },
-    { count: 5, price: 90, label: "Starter Pack", discount: "10% Off" },
-    { count: 10, price: 150, label: "Pro Bundle", discount: "25% Off" },
+    { count: 1, price: 50, label: "Single Render" },
+    { count: 5, price: 225, label: "Starter Pack", discount: "10% Off" },
+    { count: 10, price: 375, label: "Pro Bundle", discount: "25% Off" },
   ];
   if (!isOpen) return null;
   return (
@@ -120,7 +121,7 @@ function PaymentModal({ isOpen, onClose, onConfirm, loading }) {
                     <p className="text-xs text-textSecondary">{opt.label}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-bold text-white">Ã¢â€šÂ¹{opt.price}</p>
+                    <p className="text-lg font-bold text-white">{RUPEE}{opt.price}</p>
                   </div>
                 </div>
               </div>
@@ -135,7 +136,7 @@ function PaymentModal({ isOpen, onClose, onConfirm, loading }) {
               "Initializing..."
             ) : (
               <span className="flex items-center gap-2">
-                Pay Ã¢â€šÂ¹{options.find((o) => o.count === selected).price}{" "}
+                Pay {RUPEE}{options.find((o) => o.count === selected).price}{" "}
                 <Sparkles size={16} />
               </span>
             )}
@@ -350,7 +351,7 @@ export default function LiveDemo() {
       const disposition = res.headers.get("content-disposition");
 
       if (disposition) {
-        // Ã°Å¸â€Â¥ handle UTF-8 format (your backend)
+        // Handle UTF-8 filename format from the backend
         const utfMatch = disposition.match(/filename\*=UTF-8''(.+)/);
 
         if (utfMatch) {

@@ -504,13 +504,19 @@ def get_me(user: User = Depends(get_current_user)):
 # PAYMENTS
 # --------------------------------------------------
 
+CREDIT_PACKAGES_INR = {
+    1: 50,
+    5: 225,
+    10: 375,
+}
+
+
 @api.post("/payments/create-order")
 def create_order(num_credits: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if num_credits < 1:
-        raise HTTPException(status_code=400, detail="Minimum 1 credit required")
+    if num_credits not in CREDIT_PACKAGES_INR:
+        raise HTTPException(status_code=400, detail="Invalid credit package")
 
-    PRICE_PER_CREDIT = 20 
-    total_amount_in_paise = num_credits * PRICE_PER_CREDIT * 100
+    total_amount_in_paise = CREDIT_PACKAGES_INR[num_credits] * 100
     
     order_data = {
         "amount": total_amount_in_paise,

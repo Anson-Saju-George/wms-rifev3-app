@@ -3,13 +3,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { X, CreditCard, Sparkles } from "lucide-react";
 
+const RUPEE = "\u20B9";
+
 export default function PaymentModal({ isOpen, onClose, onConfirm, loading }) {
   const [selected, setSelected] = useState(1);
 
   const options = [
-    { count: 1, price: 20, label: "Single Render" },
-    { count: 5, price: 90, label: "Starter Pack", discount: "10% Off" },
-    { count: 10, price: 150, label: "Pro Bundle", discount: "25% Off" },
+    { count: 1, price: 50, label: "Single Render" },
+    { count: 5, price: 225, label: "Starter Pack", discount: "10% Off" },
+    { count: 10, price: 375, label: "Pro Bundle", discount: "25% Off" },
   ];
 
   if (!isOpen) return null;
@@ -76,7 +78,7 @@ export default function PaymentModal({ isOpen, onClose, onConfirm, loading }) {
                     <p className="text-xs text-textSecondary">{opt.label}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-bold text-white">₹{opt.price}</p>
+                    <p className="text-lg font-bold text-white">{RUPEE}{opt.price}</p>
                     <p className="text-[10px] text-textSecondary uppercase">One-time</p>
                   </div>
                 </div>
@@ -93,7 +95,7 @@ export default function PaymentModal({ isOpen, onClose, onConfirm, loading }) {
               "Initializing..."
             ) : (
               <span className="flex items-center gap-2">
-                Proceed to Pay ₹{options.find((o) => o.count === selected).price}
+                Proceed to Pay {RUPEE}{options.find((o) => o.count === selected).price}
                 <Sparkles size={16} />
               </span>
             )}
