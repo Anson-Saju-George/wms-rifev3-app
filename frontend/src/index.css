@@ -57,3 +57,8 @@ html::-webkit-scrollbar,
 body::-webkit-scrollbar {
   display: none;                /* Chrome / Safari */
 }
+
+::selection {
+  background: #d1d5db;
+  color: #0A0A0A;
+}
