@@ -2,7 +2,7 @@
 
 Web Motion Synthesis is a React 19/Vite 7 frontend plus FastAPI backend for RIFE-based video frame interpolation. The production container serves the built frontend and `/api/*` from one FastAPI process on internal port `8000`.
 
-For audited implementation status and verification notes, see [docs/Project-Status.md](docs/Project-Status.md).
+An earlier implementation-status snapshot (now outdated) is archived at [docs/archive/Project-Status.md](docs/archive/Project-Status.md).
 
 ## Local Container Run
 
